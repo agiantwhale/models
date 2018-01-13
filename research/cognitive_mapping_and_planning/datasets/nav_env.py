@@ -51,6 +51,9 @@ import render.swiftshader_renderer as sru
 from render.swiftshader_renderer import SwiftshaderRenderer
 import cv2
 
+import deepmind_lab
+import top_view_renderer as render
+
 label_nodes_with_class           = gu.label_nodes_with_class
 label_nodes_with_class_geodesic  = gu.label_nodes_with_class_geodesic
 get_distance_node_list           = gu.get_distance_node_list
@@ -1023,35 +1026,64 @@ class NavigationEnv(GridWorld, Building):
   def cleanup(self):
     self.episode = None
 
-class VisualNavigationEnv(NavigationEnv):
-  """Class for doing visual navigation in environments. Functions for computing
-  features on states, etc.
-  """
+class DeepMindNavigationEnv(NavigationEnv):
+  WORLD_TO_GAME_UNITS = 32 # 1 meter = 32 units
+  WALL_BLOCK_SIZE = 100 # from top_view_render
+
+  def find_closest_node(self, pos):
+    def xyt_dist(xyt, pos):
+      x, y, _ = xyt
+      t_x, t_y = pos
+      return pow(x - t_x, 2) + pow(y - t_y, 2)
+    
+    gtG = self.task.gtG
+    return min(gtG.vertices(), key=lambda n: xyt_dist(n, pos))
+
+  def valid_fn_vec(self, pqr):
+    """Returns if the given set of nodes is valid or not."""
+    xyt = self.to_actual_xyt_vec(np.array(pqr))
+    x = int(self.WALL_BLOCK_SIZE * np.round(xyt[:,[0]]).astype(np.int32) / self.WORLD_TO_GAME_UNITS)
+    y = int(self.WALL_BLOCK_SIZE * np.round(xyt[:,[1]]).astype(np.int32) / self.WORLD_TO_GAME_UNITS)
+    return (x, y) in self.top_view._entity_map._wall_coordinates
+
+  def render_nodes(self, nodes, perturb=None, aux_delta_theta=0.):
+    imgs = [self.env.observations()['RGB_INTERLACED']]
+    return imgs
+
+  def reset(self, rngs):
+    self.env.reset()
+
+    """
+    TODO -- Somehow get the agent's position
+    """
+    agent_pos = None
+    return find_closest_node(pos)
+
+  def take_action(self, current_node_ids, action):
+    """Returns the new node after taking the action action. Stays at the current
+    node if the action is invalid."""
+
+    """
+    TODO -- Write mappings here
+    """
+    POSSIBLE_ACTIONS = {}
+    self.env.step(POSSIBLE_ACTIONS[action], num_steps=1)
+
+    """
+    TODO -- Somehow get the agent's position
+    """
+    agent_pos = None
+    return find_closest_node(pos)
+
   def __init__(self, robot, env, task_params, category_list=None,
                building_name=None, flip=False, logdir=None,
                building_loader=None, r_obj=None):
-    tt = utils.Timer()
-    tt.tic()
-    Building.__init__(self, building_name, robot, env, category_list,
-                      small=task_params.toy_problem, flip=flip, logdir=logdir,
-                      building_loader=building_loader)
+    self.env = deepmind_lab.Lab(building_name, ['RGB_INTERLACED'])
+    self.env.reset()
 
-    self.set_r_obj(r_obj)
-    self.task_params = task_params
-    self.task = None
-    self.episode = None
-    self._preprocess_for_task(self.task_params.building_seed)
-    if hasattr(self.task_params, 'map_scales'):
-      self.task.scaled_maps = resize_maps(
-          self.traversible.astype(np.float32)*1, self.task_params.map_scales,
-          self.task_params.map_resize_method)
-    else:
-      logging.fatal('VisualNavigationEnv does not support scale_f anymore.')
-    self.task.readout_maps_scaled = resize_maps(
-      self.traversible.astype(np.float32)*1,
-      self.task_params.readout_maps_scales,
-      self.task_params.map_resize_method)
-    tt.toc(log_at=1, log_str='VisualNavigationEnv __init__: ')
+    self.top_view = TopView(assets_top_dir, "xyz")
+    self.top_view._entity_file = lambda : entityLayer
+    self.top_view._entity_map = EntityMap(top_view._entity_file())
 
   def get_weight(self):
     return self.task.nodes.shape[0]
@@ -1067,8 +1099,8 @@ class VisualNavigationEnv(NavigationEnv):
     for i in range(len(goal_nodes)):
       end_nodes = goal_nodes[i]
       goal_loc, _, _, goal_theta = self.get_loc_axis(
-          np.array(end_nodes), delta_theta=self.task.delta_theta,
-          perturb=goal_perturbs[:,i,:])
+        np.array(end_nodes), delta_theta=self.task.delta_theta,
+        perturb=goal_perturbs[:,i,:])
 
       # Compute the relative location to all goals from the starting location.
       loc, _, _, theta = self.get_loc_axis(np.array(start_nodes),
@@ -1099,17 +1131,16 @@ class VisualNavigationEnv(NavigationEnv):
       goal_locs = np.zeros((self.task_params.batch_size, 1, 2),
                            dtype=np.float32)
       for i in range(self.task_params.batch_size):
-          t = target_class[i]
-          rel_goal_locs[i,0,t] = 1.
-          goal_locs[i,0,0] = t
-          goal_locs[i,0,1] = np.NaN
+        t = target_class[i]
+        rel_goal_locs[i,0,t] = 1.
+        goal_locs[i,0,0] = t
+        goal_locs[i,0,1] = np.NaN
 
     return vars(utils.Foo(orig_maps=maps, goal_loc=goal_locs,
                           rel_goal_loc_at_start=rel_goal_locs))
 
   def pre_common_data(self, inputs):
     return inputs
-
 
   def get_features(self, current_node_ids, step_number):
     task_params = self.task_params
@@ -1164,7 +1195,7 @@ class VisualNavigationEnv(NavigationEnv):
                              self.task_params.img_fov)
       XYZ = get_point_cloud_from_z(100./d[...,0], cm)
       XYZ = make_geocentric(XYZ*100., self.robot.sensor_height,
-                                      self.robot.camera_elevation_degree)
+                            self.robot.camera_elevation_degree)
       for i in range(len(self.task_params.analytical_counts.map_sizes)):
         non_linearity = self.task_params.analytical_counts.non_linearity[i]
         count, isvalid = bin_points(XYZ*1.,
@@ -1234,7 +1265,7 @@ class VisualNavigationEnv(NavigationEnv):
 
       for i in range(len(self.task_params.map_scales)):
         outs['ego_maps_{:d}'.format(i)] = \
-            np.expand_dims(np.expand_dims(maps[i], axis=1), axis=-1)
+          np.expand_dims(np.expand_dims(maps[i], axis=1), axis=-1)
 
     if self.task_params.outputs.readout_maps:
       loc, x_axis, y_axis, theta = self.get_loc_axis(current_nodes,
@@ -1246,11 +1277,11 @@ class VisualNavigationEnv(NavigationEnv):
                                       loc, x_axis, y_axis, theta)
       for i in range(len(self.task_params.readout_maps_scales)):
         outs['readout_maps_{:d}'.format(i)] = \
-            np.expand_dims(np.expand_dims(maps[i], axis=1), axis=-1)
+          np.expand_dims(np.expand_dims(maps[i], axis=1), axis=-1)
 
     # Images for the goal.
     if self.task_params.outputs.ego_goal_imgs:
-      if self.task_params.type[:14] != 'to_nearest_obj': 
+      if self.task_params.type[:14] != 'to_nearest_obj':
         loc, x_axis, y_axis, theta = self.get_loc_axis(current_nodes,
                                                        delta_theta=self.task.delta_theta,
                                                        perturb=perturbs[:,step_number,:])
@@ -1258,7 +1289,7 @@ class VisualNavigationEnv(NavigationEnv):
                                               delta_theta=self.task.delta_theta,
                                               perturb=end_perturbs[:,0,:])
         rel_goal_orientation = np.mod(
-            np.int32(current_nodes[:,2:] - end_nodes[:,2:]), self.task_params.n_ori)
+          np.int32(current_nodes[:,2:] - end_nodes[:,2:]), self.task_params.n_ori)
         goal_dist, goal_theta = _get_relative_goal_loc(goal_loc, loc, theta)
         goals = generate_goal_images(self.task_params.map_scales,
                                      self.task_params.map_crop_sizes,
@@ -1293,8 +1324,8 @@ class VisualNavigationEnv(NavigationEnv):
                                              delta_theta=self.task.delta_theta,
                                              perturb=perturbs[:,step_number,:])
         previous_loc, _, _, previous_theta = self.get_loc_axis(
-            previous_nodes, delta_theta=self.task.delta_theta,
-            perturb=perturbs[:,step_number-1,:])
+          previous_nodes, delta_theta=self.task.delta_theta,
+          perturb=perturbs[:,step_number-1,:])
 
         incremental_locs_ = np.reshape(loc-previous_loc, [self.task_params.batch_size, 1, -1])
 
