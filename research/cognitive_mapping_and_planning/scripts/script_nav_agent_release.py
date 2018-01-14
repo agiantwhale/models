@@ -75,6 +75,8 @@ flags.DEFINE_integer('task', 0, 'The Task ID. This value is used when training '
 
 flags.DEFINE_integer('num_workers', 1, '')
 
+flags.DEFINE_string('entity_layer_path', '', '')
+
 flags.DEFINE_string('config_name', '', '')
 
 flags.DEFINE_string('logdir', '', '')
@@ -86,10 +88,11 @@ flags.DEFINE_integer('delay_start_iters', 20, '')
 logging.basicConfig(level=logging.INFO)
 
 def main(_):
-  _launcher(FLAGS.config_name, FLAGS.logdir)
+  _launcher(FLAGS.config_name, FLAGS.logdir, FLAGS.entity_layer_path)
 
-def _launcher(config_name, logdir):
-  args = _setup_args(config_name, logdir)
+def _launcher(config_name, logdir, entpath):
+  args = _setup_args(config_name, logdir, entpath)
+  args.navtask.building_names = [entpath]
 
   fu.makedirs(args.logdir)
 
@@ -117,7 +120,7 @@ def get_args_for_config(config_name):
     logging.fatal('Unknown type: {:s}'.format(type))
   return args
 
-def _setup_args(config_name, logdir):
+def _setup_args(config_name, logdir, entpath):
   args = get_args_for_config(config_name)
   args.solver.num_workers = FLAGS.num_workers
   args.solver.task = FLAGS.task

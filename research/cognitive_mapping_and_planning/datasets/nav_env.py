@@ -47,11 +47,9 @@ import src.utils as utils
 import src.graph_utils as gu
 import src.map_utils as mu
 import src.depth_utils as du
-import render.swiftshader_renderer as sru
-from render.swiftshader_renderer import SwiftshaderRenderer
 import cv2
 
-import deepmind_lab
+import deepmind_lab_gym as dlg
 import top_view_renderer as render
 
 label_nodes_with_class           = gu.label_nodes_with_class
@@ -1078,7 +1076,7 @@ class DeepMindNavigationEnv(NavigationEnv):
   def __init__(self, robot, env, task_params, category_list=None,
                building_name=None, flip=False, logdir=None,
                building_loader=None, r_obj=None):
-    self.env = deepmind_lab.Lab(building_name, ['RGB_INTERLACED'])
+    self.env = dlg.Lab(building_name, ['RGB_INTERLACED'])
     self.env.reset()
 
     self.top_view = TopView(assets_top_dir, "xyz")
@@ -1441,16 +1439,6 @@ class BuildingMultiplexer():
       self.buildings.append(b)
 
   def _setup_mapper(self):
-    # Set up the renderer.
-    cp = self.camera_param
-    rgb_shader, d_shader = sru.get_shaders(cp.modalities)
-    r_obj = SwiftshaderRenderer()
-    r_obj.init_display(width=cp.width, height=cp.height, fov=cp.fov,
-                       z_near=cp.z_near, z_far=cp.z_far, rgb_shader=rgb_shader,
-                       d_shader=d_shader)
-    self.r_obj = r_obj
-    r_obj.clear_scene()
-
     # Load building env class.
     self.buildings = []
     wt = []
@@ -1459,13 +1447,11 @@ class BuildingMultiplexer():
                          task_params=self.task_params,
                          building_name=building_name, flip=self.flip[i],
                          logdir=self.logdir, building_loader=self.dataset,
-                         r_obj=r_obj)
+                         r_obj=None)
       wt.append(b.get_weight())
-      b.load_building_into_scene()
-      b.set_building_visibility(False)
       self.buildings.append(b)
     wt = np.array(wt).astype(np.float32)
-    wt = wt / np.sum(wt+0.0001)
+    wt = wt / np.sum(wt + 0.0001)
     self.building_sampling_weights = wt
 
   def sample_building(self, rng):

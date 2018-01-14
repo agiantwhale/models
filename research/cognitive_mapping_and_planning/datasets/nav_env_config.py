@@ -117,7 +117,7 @@ def nav_env_base_config():
 
   navtask_args = utils.Foo(
       building_names=['area1_gates_wingA_floor1_westpart'],
-      env_class=nav_env.VisualNavigationEnv,
+      env_class=nav_env.DeepMindNavigationEnv,
       robot=robot,
       task_params=task_params,
       env=env,
