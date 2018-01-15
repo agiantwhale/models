@@ -34,6 +34,7 @@ helper functions.
 
 import numpy as np
 import os
+import inspect
 import re
 import matplotlib.pyplot as plt
 
@@ -51,7 +52,6 @@ import cv2
 
 import deepmind_lab_gym as dlg
 import multiprocdmlab as mpdmlab
-import top_view_renderer as render
 
 label_nodes_with_class = gu.label_nodes_with_class
 label_nodes_with_class_geodesic = gu.label_nodes_with_class_geodesic
@@ -1076,55 +1076,63 @@ class DeepMindNavigationEnv(NavigationEnv):
         xyt = self.to_actual_xyt_vec(np.array(pqr))
         x = int(self.WALL_BLOCK_SIZE * np.round(xyt[:, [0]]).astype(np.int32) / self.WORLD_TO_GAME_UNITS)
         y = int(self.WALL_BLOCK_SIZE * np.round(xyt[:, [1]]).astype(np.int32) / self.WORLD_TO_GAME_UNITS)
-        return (x, y) in self.top_view._entity_map._wall_coordinates
+        return (x, y) in self.env._top_view._entity_map._wall_coordinates
 
     def render_nodes(self, nodes, perturb=None, aux_delta_theta=0.):
-        imgs = [self.env.observations()['RGB_INTERLACED']]
-        return imgs
+        return self.obs
 
     def reset(self, rngs):
         self.env.reset()
 
         """
-        TODO -- Somehow get the agent's position
+        TODO -- Investigate if obtaining spawn location is possible without calling step
         """
-        agent_pos = None
-        return self.find_closest_node(pos)
+        obs, _, _, info = self.env.step(0)
+
+        agent_pos = info.get("SPAWN.LOC")
+        return self.find_closest_node(agent_pos)
 
     def take_action(self, current_node_ids, action):
         """Returns the new node after taking the action action. Stays at the current
         node if the action is invalid."""
 
-        """
-        TODO -- Write mappings here
-        """
         POSSIBLE_ACTIONS = {}
-        self.env.step(POSSIBLE_ACTIONS[action], num_steps=1)
+        obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action])
+
+        self.obs = obs
 
         """
-        TODO -- Somehow get the agent's position
+        Find exact agent position
         """
-        agent_pos = None
-        return self.find_closest_node(pos)
+        agent_pos = info.get("POSE")
+        return self.find_closest_node(agent_pos), reward
 
     def __init__(self, robot, env, task_params, category_list=None,
                  building_name=None, flip=False, logdir=None,
                  building_loader=None, r_obj=None):
+
+        mode, size, num = building_name.split("-")
+
+        deepmind_basepath = os.path.dirname(inspect.getfile(dlg)) + "/.." * 4
+        mapstrings_path = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer".format(deepmind_basepath,
+                                                                                            size,
+                                                                                            mode,
+                                                                                            num)
+
         self.env = mpdmlab.MultiProcDeepmindLab(
             dlg.DeepmindLab
             , building_name
             , dict(width=320, height=320, fps=30
-                   , rows=rows
-                   , cols=cols
+                   , rows=9
+                   , cols=9
                    , mode=mode
                    , num_maps=1
                    , withvariations=True
                    , random_spawn_random_goal="True"
-                   , chosen_map="training-09x09-0127"
-                   , mapnames="training-09x09-0127"
+                   , chosen_map=building_name
+                   , mapnames=building_name
                    # , mapnames = "seekavoid_arena_01"
-                   , mapstrings=
-                   open("deepmind-lab/assets/entityLayers/09x09/training/entityLayers/0127.entityLayer").read()
+                   , mapstrings=open(mapstrings_path).read()
                    , apple_prob=0.9
                    , episode_length_seconds=5)
             # , dlg.L2NActionMapper_v0
