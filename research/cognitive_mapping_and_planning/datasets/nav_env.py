@@ -53,6 +53,7 @@ import cv2
 import deepmind_lab as dl
 import deepmind_lab_gym as dlg
 import multiprocdmlab as mpdmlab
+from top_view_renderer import EntityMap
 
 label_nodes_with_class = gu.label_nodes_with_class
 label_nodes_with_class_geodesic = gu.label_nodes_with_class_geodesic
@@ -478,7 +479,6 @@ class MeshMapper(Building):
     def _preprocess_for_task(self, seed):
         if self.task is None or self.task.seed != seed:
             rng = np.random.RandomState(seed)
-            origin_loc = get_graph_origin_loc(rng, self.traversible)
             self.task = utils.Foo(seed=seed, origin_loc=origin_loc,
                                   n_ori=self.task_params.n_ori)
             G = generate_graph(self.valid_fn_vec,
@@ -1060,43 +1060,54 @@ class NavigationEnv(GridWorld, Building):
 
 
 class DeepMindNavigationEnv(NavigationEnv):
-    WORLD_TO_GAME_UNITS = 32  # 1 meter = 32 units
-    WALL_BLOCK_SIZE = 100  # from top_view_render
-
     def find_closest_node(self, pos):
-        def xyt_dist(xyt, pos):
-            x, y, _ = xyt
-            t_x, t_y = pos
-            return pow(x - t_x, 2) + pow(y - t_y, 2)
+        def xyt_dist(xyt, e):
+            if xyt[2] != e[2]: return float('inf')
+            else: return np.linalg.norm(xyt - e)
 
-        gtG = self.task.gtG
-        return min(gtG.vertices(), key=lambda n: xyt_dist(n, pos))
+        ag_xyt = np.array([pos[0] / 100, pos[1] / 100, int(pos[5] / np.pi)])
+
+        min_node = min(self.task.nodes,
+                       key=lambda n: xyt_dist(self.to_actual_xyt(n), ag_xyt))
+        return self.task.nodes_to_id[min_node]
 
     def valid_fn_vec(self, pqr):
         """Returns if the given set of nodes is valid or not."""
+        wall_coords = self.entmap.wall_coordinates_from_string((1, 1))
+
+        def is_inside(x, y):
+            w, h = self.entmap.width(), self.entmap.height()
+            return x >= 0 and y >= 0 and int(x) <= w and int(y) <= h
+
+        def is_in_wall(x, y):
+            return (int(x), int(y)) in wall_coords
+
         xyt = self.to_actual_xyt_vec(np.array(pqr))
-        x = int(self.WALL_BLOCK_SIZE * np.round(xyt[:, [0]]).astype(np.int32) / self.WORLD_TO_GAME_UNITS)
-        y = int(self.WALL_BLOCK_SIZE * np.round(xyt[:, [1]]).astype(np.int32) / self.WORLD_TO_GAME_UNITS)
-        return (x, y) in self.env._top_view._entity_map._wall_coordinates
+        x = xyt[:, [0]]
+        y = xyt[:, [1]]
+
+        return [is_inside(_x, _y) and not is_in_wall(_x, _y)
+                for _x, _y in zip(x, y)]
 
     def render_nodes(self, nodes, perturb=None, aux_delta_theta=0.):
         return self.obs
 
     def reset(self, rngs):
         self.env.reset()
-
-        """
-        TODO -- Investigate if obtaining spawn location is possible without calling step
-        """
         obs, _, _, info = self.env.step(0)
 
-        agent_pos = info.get("SPAWN.LOC")
+        agent_pos = info.get("POSE")
         return self.find_closest_node(agent_pos)
 
     def take_action(self, current_node_ids, action):
         """Returns the new node after taking the action action. Stays at the current
         node if the action is invalid."""
 
+        """
+        0 -- Go forward
+        1 -- Turn left
+        2 -- Turn right
+        """
         POSSIBLE_ACTIONS = {}
         obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action])
 
@@ -1106,7 +1117,19 @@ class DeepMindNavigationEnv(NavigationEnv):
         Find exact agent position
         """
         agent_pos = info.get("POSE")
-        return self.find_closest_node(agent_pos), reward
+        return [self.find_closest_node(agent_pos)], [reward]
+
+    def _preprocess_for_task(self, spawn):
+        """Sets up the task field for doing navigation on the grid world."""
+        self.task = utils.Foo(n_ori=4, origin_loc=(0, 0, 0))
+        G = generate_graph(self.valid_fn_vec, 0.1, 4, spawn)
+        gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
+        self.task.gtG = gtG
+        self.task.nodes = nodes
+        self.task.nodes_to_id = nodes_to_id
+
+        logging.info('Building %s, #V=%d, #E=%d', self.building_name,
+                     self.task.nodes.shape[0], self.task.gtG.num_edges())
 
     def __init__(self, robot, env, task_params, category_list=None,
                  building_name=None, flip=False, logdir=None,
@@ -1121,11 +1144,13 @@ class DeepMindNavigationEnv(NavigationEnv):
                                                                                             mode,
                                                                                             num)
 
+        self.entmap = EntityMap(mapstrings_path)
+
         dl.set_runfiles_path(deepmind_runfiles_path)
 
         self.env = mpdmlab.MultiProcDeepmindLab(
             dlg.DeepmindLab
-            , building_name
+            , "random_mazes"
             , dict(width=320, height=320, fps=30
                    , rows=9
                    , cols=9
@@ -1147,6 +1172,13 @@ class DeepMindNavigationEnv(NavigationEnv):
             , mpdmlab_workers=1
         )
         self.env.reset()
+        _, _, _, info = self.env.step(0)
+
+        self.building_name = building_name
+
+        spawn = info["POSE"]
+        spawn = (spawn[0] / 100, spawn[1] / 100, 0)
+        self._preprocess_for_task(spawn)
 
         # self.top_view = dlg.TopViewDeepmindLab(self.env)
         # self.top_view = TopView(assets_top_dir, "xyz")
