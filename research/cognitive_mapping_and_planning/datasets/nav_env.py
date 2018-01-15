@@ -50,6 +50,7 @@ import src.map_utils as mu
 import src.depth_utils as du
 import cv2
 
+import deepmind_lab as dl
 import deepmind_lab_gym as dlg
 import multiprocdmlab as mpdmlab
 
@@ -1113,11 +1114,14 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         mode, size, num = building_name.split("-")
 
-        deepmind_basepath = os.path.dirname(inspect.getfile(dlg)) + "/.." * 4
-        mapstrings_path = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer".format(deepmind_basepath,
+        deepmind_runfiles_path = os.path.dirname(inspect.getfile(dl))
+        deepmind_source_path = os.path.abspath(deepmind_runfiles_path + "/.." * 3)
+        mapstrings_path = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer".format(deepmind_source_path,
                                                                                             size,
                                                                                             mode,
                                                                                             num)
+
+        dl.set_runfiles_path(deepmind_runfiles_path)
 
         self.env = mpdmlab.MultiProcDeepmindLab(
             dlg.DeepmindLab
@@ -1129,6 +1133,7 @@ class DeepMindNavigationEnv(NavigationEnv):
                    , num_maps=1
                    , withvariations=True
                    , random_spawn_random_goal="True"
+                   , entitydir=deepmind_runfiles_path
                    , chosen_map=building_name
                    , mapnames=building_name
                    # , mapnames = "seekavoid_arena_01"
