@@ -1189,8 +1189,8 @@ class DeepMindNavigationEnv(NavigationEnv):
         return self.task.nodes.shape[0]
 
     def get_common_data(self):
-        return vars(utils.Foo(orig_maps=np.array([]),
-                              goal_loc=np.array([]),
+        return vars(utils.Foo(orig_maps=np.zeros((16, 1, 1, 1, 1)),
+                              goal_loc=np.zeros((16, 1, 2)),
                               rel_goal_loc_at_start=np.zeros((16, 1, 4))))
 
     def pre_common_data(self, inputs):
