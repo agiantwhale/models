@@ -1069,7 +1069,7 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         min_node = min(self.task.nodes,
                        key=lambda n: xyt_dist(self.to_actual_xyt(n), ag_xyt))
-        return self.task.nodes_to_id[min_node]
+        return self.task.nodes_to_id[tuple(min_node)]
 
     def valid_fn_vec(self, pqr):
         """Returns if the given set of nodes is valid or not."""
@@ -1189,56 +1189,9 @@ class DeepMindNavigationEnv(NavigationEnv):
         return self.task.nodes.shape[0]
 
     def get_common_data(self):
-        goal_nodes = self.episode.goal_nodes
-        start_nodes = self.episode.start_nodes
-        perturbs = self.episode.perturbs
-        goal_perturbs = self.episode.goal_perturbs
-        target_class = self.episode.target_class
-
-        goal_locs = [];
-        rel_goal_locs = [];
-        for i in range(len(goal_nodes)):
-            end_nodes = goal_nodes[i]
-            goal_loc, _, _, goal_theta = self.get_loc_axis(
-                np.array(end_nodes), delta_theta=self.task.delta_theta,
-                perturb=goal_perturbs[:, i, :])
-
-            # Compute the relative location to all goals from the starting location.
-            loc, _, _, theta = self.get_loc_axis(np.array(start_nodes),
-                                                 delta_theta=self.task.delta_theta,
-                                                 perturb=perturbs[:, 0, :])
-            r_goal, t_goal = _get_relative_goal_loc(goal_loc * 1., loc, theta)
-            rel_goal_loc = np.concatenate((r_goal * np.cos(t_goal), r_goal * np.sin(t_goal),
-                                           np.cos(goal_theta - theta),
-                                           np.sin(goal_theta - theta)), axis=1)
-            rel_goal_locs.append(np.expand_dims(rel_goal_loc, axis=1))
-            goal_locs.append(np.expand_dims(goal_loc, axis=1))
-
-        map = self.traversible * 1.
-        maps = np.repeat(np.expand_dims(np.expand_dims(map, axis=0), axis=0),
-                         self.task_params.batch_size, axis=0) * 1
-        if self.task_params.type[:14] == 'to_nearest_obj':
-            for i in range(self.task_params.batch_size):
-                maps[i, 0, :, :] += 0.5 * (self.task.class_maps_dilated[:, :, target_class[i]])
-
-        rel_goal_locs = np.concatenate(rel_goal_locs, axis=1)
-        goal_locs = np.concatenate(goal_locs, axis=1)
-        maps = np.expand_dims(maps, axis=-1)
-
-        if self.task_params.type[:14] == 'to_nearest_obj':
-            rel_goal_locs = np.zeros((self.task_params.batch_size, 1,
-                                      len(self.task_params.semantic_task.class_map_names)),
-                                     dtype=np.float32)
-            goal_locs = np.zeros((self.task_params.batch_size, 1, 2),
-                                 dtype=np.float32)
-            for i in range(self.task_params.batch_size):
-                t = target_class[i]
-                rel_goal_locs[i, 0, t] = 1.
-                goal_locs[i, 0, 0] = t
-                goal_locs[i, 0, 1] = np.NaN
-
-        return vars(utils.Foo(orig_maps=maps, goal_loc=goal_locs,
-                              rel_goal_loc_at_start=rel_goal_locs))
+        return vars(utils.Foo(orig_maps=np.array([]),
+                              goal_loc=np.array([]),
+                              rel_goal_loc_at_start=np.zeros((16, 1, 4))))
 
     def pre_common_data(self, inputs):
         return inputs
