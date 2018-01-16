@@ -697,7 +697,8 @@ class MeshMapper(Building):
 
 
 def _nav_env_reset_helper(type, rng, nodes, batch_size, gtG, max_dist,
-                          num_steps, num_goals, data_augment, **kwargs):
+                          num_steps, num_goals, data_augment,
+                          **kwargs):
     """Generates and returns a new episode."""
     max_compute = max_dist + 4 * num_steps
     if type == 'general':
@@ -1062,13 +1063,13 @@ class NavigationEnv(GridWorld, Building):
 class DeepMindNavigationEnv(NavigationEnv):
     def find_closest_node(self, pos):
         def xyt_dist(xyt, e):
-            if xyt[2] != e[2]: return float('inf')
-            else: return np.linalg.norm(xyt - e)
-
-        ag_xyt = np.array([pos[0] / 100, pos[1] / 100, int(pos[5] / np.pi)])
+            if xyt[2] != e[2]:
+                return float('inf')
+            else:
+                return np.linalg.norm(xyt - e)
 
         min_node = min(self.task.nodes,
-                       key=lambda n: xyt_dist(self.to_actual_xyt(n), ag_xyt))
+                       key=lambda n: xyt_dist(self.to_actual_xyt(n), pos))
         return self.task.nodes_to_id[tuple(min_node)]
 
     def valid_fn_vec(self, pqr):
@@ -1097,7 +1098,38 @@ class DeepMindNavigationEnv(NavigationEnv):
         obs, _, _, info = self.env.step(0)
 
         agent_pos = info.get("POSE")
-        return self.find_closest_node(agent_pos)
+        ag_xyt = np.array([agent_pos[0] / 100, agent_pos[1] / 100, int(agent_pos[5] / np.pi)])
+        goal_loc = np.array(list(info.get("GOAL.LOC")) + [0])
+
+        rng_perturb = rngs[1];
+        nodes = self.task.nodes
+        tp = self.task_params
+
+        start_node_ids = [self.find_closest_node(ag_xyt)]
+        goal_node_ids = [self.find_closest_node(goal_loc)]
+
+        dists = get_distance_node_list(self.task.gtG, source_nodes=goal_node_ids,
+                                       direction='to')
+
+        start_nodes = [tuple(nodes[_, :]) for _ in start_node_ids]
+        goal_nodes = [[tuple(nodes[_, :]) for _ in __] for __ in goal_node_ids]
+        data_augment = tp.data_augment
+        perturbs = _gen_perturbs(rng_perturb, tp.batch_size,
+                                 (tp.num_steps + 1) * tp.num_goals,
+                                 data_augment.lr_flip, data_augment.delta_angle,
+                                 data_augment.delta_xy, data_augment.structured)
+        perturbs = np.array(perturbs)  # batch x steps x 4
+        end_perturbs = perturbs[:, -(tp.num_goals):, :] * 1  # fixed perturb for the goal.
+        perturbs = perturbs[:, :-(tp.num_goals), :] * 1
+
+        history = -np.ones((tp.batch_size, tp.num_steps * tp.num_goals), dtype=np.int32)
+        self.episode = utils.Foo(
+            start_nodes=start_nodes, start_node_ids=start_node_ids,
+            goal_nodes=goal_nodes, goal_node_ids=goal_node_ids, dist_to_goal=dists,
+            perturbs=perturbs, goal_perturbs=end_perturbs, history=history,
+            history_frames=[])
+
+        return start_node_ids
 
     def take_action(self, current_node_ids, action):
         """Returns the new node after taking the action action. Stays at the current
@@ -1109,15 +1141,15 @@ class DeepMindNavigationEnv(NavigationEnv):
         2 -- Turn right
         """
         POSSIBLE_ACTIONS = {}
-        obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action])
-
-        self.obs = obs
+        self.history.append(self.obs)
+        self.obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action])
 
         """
         Find exact agent position
         """
         agent_pos = info.get("POSE")
-        return [self.find_closest_node(agent_pos)], [reward]
+        ag_xyt = np.array([agent_pos[0] / 100, agent_pos[1] / 100, int(agent_pos[5] / np.pi)])
+        return [self.find_closest_node(ag_xyt)], [reward]
 
     def _preprocess_for_task(self, spawn):
         """Sets up the task field for doing navigation on the grid world."""
@@ -1127,6 +1159,10 @@ class DeepMindNavigationEnv(NavigationEnv):
         self.task.gtG = gtG
         self.task.nodes = nodes
         self.task.nodes_to_id = nodes_to_id
+        self.task.reset_kwargs = {}
+        # self.task.reset_kwargs = {'sampling': self.task_params.semantic_task.sampling,
+        #                           'class_nodes': self.task.class_nodes,
+        #                           'dist_to_class': self.task.dist_to_class}
 
         logging.info('Building %s, #V=%d, #E=%d', self.building_name,
                      self.task.nodes.shape[0], self.task.gtG.num_edges())
@@ -1134,6 +1170,7 @@ class DeepMindNavigationEnv(NavigationEnv):
     def __init__(self, robot, env, task_params, category_list=None,
                  building_name=None, flip=False, logdir=None,
                  building_loader=None, r_obj=None):
+        self.task_params = task_params
 
         mode, size, num = building_name.split("-")
 
@@ -1172,7 +1209,7 @@ class DeepMindNavigationEnv(NavigationEnv):
             , mpdmlab_workers=1
         )
         self.env.reset()
-        _, _, _, info = self.env.step(0)
+        self.obs, _, _, info = self.env.step(0)
 
         self.building_name = building_name
 
@@ -1189,9 +1226,9 @@ class DeepMindNavigationEnv(NavigationEnv):
         return self.task.nodes.shape[0]
 
     def get_common_data(self):
-        return vars(utils.Foo(orig_maps=np.zeros((16, 1, 1, 1, 1)),
-                              goal_loc=np.zeros((16, 1, 2)),
-                              rel_goal_loc_at_start=np.zeros((16, 1, 4))))
+        return vars(utils.Foo(orig_maps=np.zeros((self.task_params.batch_size, 1, 1, 1, 1)),
+                              goal_loc=np.zeros((self.task_params.batch_size, 1, 2)),
+                              rel_goal_loc_at_start=np.zeros((self.task_params.batch_size, 1, 4))))
 
     def pre_common_data(self, inputs):
         return inputs
@@ -1213,15 +1250,14 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         if self.task_params.outputs.images:
             imgs_all = []
-            imgs = self.render_nodes([tuple(x) for x in current_nodes],
-                                     perturb=perturbs[:, step_number, :])
+            imgs = self.render_nodes(None)
             imgs_all.append(imgs)
-            aux_delta_thetas = self.task_params.aux_delta_thetas
-            for i in range(len(aux_delta_thetas)):
-                imgs = self.render_nodes([tuple(x) for x in current_nodes],
-                                         perturb=perturbs[:, step_number, :],
-                                         aux_delta_theta=aux_delta_thetas[i])
-                imgs_all.append(imgs)
+            # aux_delta_thetas = self.task_params.aux_delta_thetas
+            # for i in range(len(aux_delta_thetas)):
+            #     imgs = self.render_nodes([tuple(x) for x in current_nodes],
+            #                              perturb=perturbs[:, step_number, :],
+            #                              aux_delta_theta=aux_delta_thetas[i])
+            #     imgs_all.append(imgs)
             imgs_all = np.array(imgs_all)  # A x B x H x W x C
             imgs_all = np.transpose(imgs_all, axes=[1, 0, 2, 3, 4])
             imgs_all = np.expand_dims(imgs_all, axis=1)  # B x N x A x H x W x C
