@@ -24,7 +24,6 @@ import logging
 from tensorflow.python.platform import app
 from tensorflow.python.platform import flags
 
-import render.swiftshader_renderer as renderer 
 import src.file_utils as fu
 import src.utils as utils
 
