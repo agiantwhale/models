@@ -1112,7 +1112,7 @@ class DeepMindNavigationEnv(NavigationEnv):
                                        direction='to')
 
         start_nodes = [tuple(nodes[_, :]) for _ in start_node_ids]
-        goal_nodes = [[tuple(nodes[_, :]) for _ in __] for __ in goal_node_ids]
+        goal_nodes = [[tuple(nodes[_, :])] for _ in goal_node_ids]
         data_augment = tp.data_augment
         perturbs = _gen_perturbs(rng_perturb, tp.batch_size,
                                  (tp.num_steps + 1) * tp.num_goals,
