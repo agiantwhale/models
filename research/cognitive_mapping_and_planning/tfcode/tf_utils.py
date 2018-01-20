@@ -373,6 +373,7 @@ def train_step_custom_online_sampling(sess, train_op, global_step,
 
       feed_dict = prepare_feed_dict(m.input_tensors['step'], state_features[-1])
       optimal_action = e.get_optimal_action(states[j], j)
+      print("optimal action: {}".format(optimal_action))
       for x, v in zip(m.train_ops['common'], common_data):
         feed_dict[x] = v
       if dagger_sample_bn_false:
@@ -392,6 +393,7 @@ def train_step_custom_online_sampling(sess, train_op, global_step,
       state_targets.append(e.get_targets(states[j], j))
 
       if j < num_steps-1:
+        print("running step: {}".format(j))
         # Sample from action_probs and optimal action.
         action, action_sample_wt = sample_action(
             rng_action, action_probs, optimal_action, sample_gt_prob,
