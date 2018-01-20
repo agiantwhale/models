@@ -1091,7 +1091,7 @@ class DeepMindNavigationEnv(NavigationEnv):
                 for _x, _y in zip(x, y)]
 
     def render_nodes(self, nodes, perturb=None, aux_delta_theta=0.):
-        return self.obs
+        return [self.obs]
 
     def reset(self, rngs):
         self.env.reset()
@@ -1121,6 +1121,11 @@ class DeepMindNavigationEnv(NavigationEnv):
         perturbs = np.array(perturbs)  # batch x steps x 4
         end_perturbs = perturbs[:, -(tp.num_goals):, :] * 1  # fixed perturb for the goal.
         perturbs = perturbs[:, :-(tp.num_goals), :] * 1
+
+        """
+        TODO: Why is perturbs needed?
+        """
+        perturbs = np.zeros_like(perturbs)
 
         history = -np.ones((tp.batch_size, tp.num_steps * tp.num_goals), dtype=np.int32)
         self.episode = utils.Foo(
@@ -1158,6 +1163,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
         self.task.gtG = gtG
         self.task.nodes = nodes
+        self.task.delta_theta = 2.0 * np.pi / (self.task.n_ori * 1.)
         self.task.nodes_to_id = nodes_to_id
         self.task.reset_kwargs = {}
         # self.task.reset_kwargs = {'sampling': self.task_params.semantic_task.sampling,
@@ -1175,7 +1181,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         mode, size, num = building_name.split("-")
 
         deepmind_runfiles_path = os.path.dirname(inspect.getfile(dl))
-        deepmind_source_path = os.path.abspath(deepmind_runfiles_path + "/.." * 3)
+        deepmind_source_path = os.path.abspath(deepmind_runfiles_path + "/.." * 10 + '/deepmind-lab')
         mapstrings_path = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer".format(deepmind_source_path,
                                                                                             size,
                                                                                             mode,
@@ -1188,7 +1194,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         self.env = mpdmlab.MultiProcDeepmindLab(
             dlg.DeepmindLab
             , "random_mazes"
-            , dict(width=320, height=320, fps=30
+            , dict(width=512, height=512, fps=30
                    , rows=9
                    , cols=9
                    , mode=mode
@@ -1240,7 +1246,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         current_nodes = self.task.nodes[current_node_ids, :] * 1
         end_perturbs = self.episode.goal_perturbs[:, goal_number, :][:, np.newaxis, :]
         perturbs = self.episode.perturbs
-        target_class = self.episode.target_class
+        # target_class = self.episode.target_class
 
         # Append to history.
         self.episode.history[:, step_number] = np.array(current_node_ids)
