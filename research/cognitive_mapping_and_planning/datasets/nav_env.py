@@ -1217,7 +1217,9 @@ class DeepMindNavigationEnv(NavigationEnv):
                 "GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
             , mpdmlab_workers=1
         )
+        print("Env loaded")
         self.env.reset()
+        print("Env initialized")
         self.obs, _, _, info = self.env.step(0)
 
         self.building_name = building_name
@@ -1225,6 +1227,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         spawn = info["POSE"]
         spawn = (spawn[0] / 100, spawn[1] / 100, 0)
         self._preprocess_for_task(spawn)
+        print("Pre-process complete")
 
         # self.top_view = dlg.TopViewDeepmindLab(self.env)
         # self.top_view = TopView(assets_top_dir, "xyz")
