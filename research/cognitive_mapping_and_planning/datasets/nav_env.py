@@ -1031,14 +1031,14 @@ class NavigationEnv(GridWorld, Building):
 
     def get_optimal_action(self, current_node_ids, step_number):
         """Returns the optimal action from the current node."""
-        goal_number = step_number / self.task_params.num_steps
+        goal_number = 0
         gtG = self.task.gtG
         a = np.zeros((len(current_node_ids), self.task_params.num_actions), dtype=np.int32)
         d_dict = self.episode.dist_to_goal[goal_number]
         for i, c in enumerate(current_node_ids):
             neigh = gtG.vertex(c).out_neighbours()
             neigh_edge = gtG.vertex(c).out_edges()
-            ds = np.array([d_dict[i][int(x)] for x in neigh])
+            ds = np.array([d_dict[int(x)] for x in neigh])
             ds_min = np.min(ds)
             for i_, e in enumerate(neigh_edge):
                 if ds[i_] == ds_min:
@@ -1070,7 +1070,7 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         min_node = min(self.task.nodes,
                        key=lambda n: xyt_dist(self.to_actual_xyt(n), pos))
-        return self.task.nodes_to_id[tuple(min_node)]
+        return int(self.task.nodes_to_id[tuple(min_node)])
 
     def valid_fn_vec(self, pqr):
         """Returns if the given set of nodes is valid or not."""
@@ -1091,7 +1091,10 @@ class DeepMindNavigationEnv(NavigationEnv):
                 for _x, _y in zip(x, y)]
 
     def render_nodes(self, nodes, perturb=None, aux_delta_theta=0.):
-        return [self.obs]
+        """
+        Hack to make network working
+        """
+        return [self.obs] * self.task_params.batch_size
 
     def reset(self, rngs):
         self.env.reset()
@@ -1107,12 +1110,12 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         start_node_ids = [self.find_closest_node(ag_xyt)]
         goal_node_ids = [self.find_closest_node(goal_loc)]
-
-        dists = get_distance_node_list(self.task.gtG, source_nodes=goal_node_ids,
-                                       direction='to')
-
         start_nodes = [tuple(nodes[_, :]) for _ in start_node_ids]
         goal_nodes = [[tuple(nodes[_, :])] for _ in goal_node_ids]
+
+        dists = [get_distance_node_list(self.task.gtG, source_nodes=goal_node_ids,
+                                        direction='to')]
+
         data_augment = tp.data_augment
         perturbs = _gen_perturbs(rng_perturb, tp.batch_size,
                                  (tp.num_steps + 1) * tp.num_goals,
@@ -1140,6 +1143,8 @@ class DeepMindNavigationEnv(NavigationEnv):
         """Returns the new node after taking the action action. Stays at the current
         node if the action is invalid."""
 
+        print("Taking action {}".format(action))
+
         """
         0 -- Go forward
         1 -- Turn left
@@ -1165,10 +1170,8 @@ class DeepMindNavigationEnv(NavigationEnv):
         self.task.nodes = nodes
         self.task.delta_theta = 2.0 * np.pi / (self.task.n_ori * 1.)
         self.task.nodes_to_id = nodes_to_id
+
         self.task.reset_kwargs = {}
-        # self.task.reset_kwargs = {'sampling': self.task_params.semantic_task.sampling,
-        #                           'class_nodes': self.task.class_nodes,
-        #                           'dist_to_class': self.task.dist_to_class}
 
         logging.info('Building %s, #V=%d, #E=%d', self.building_name,
                      self.task.nodes.shape[0], self.task.gtG.num_edges())
@@ -1194,7 +1197,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         self.env = mpdmlab.MultiProcDeepmindLab(
             dlg.DeepmindLab
             , "random_mazes"
-            , dict(width=512, height=512, fps=30
+            , dict(width=225, height=225, fps=30
                    , rows=9
                    , cols=9
                    , mode=mode
@@ -1241,7 +1244,7 @@ class DeepMindNavigationEnv(NavigationEnv):
 
     def get_features(self, current_node_ids, step_number):
         task_params = self.task_params
-        goal_number = step_number / self.task_params.num_steps
+        goal_number = 0
         end_nodes = self.task.nodes[self.episode.goal_node_ids[goal_number], :] * 1
         current_nodes = self.task.nodes[current_node_ids, :] * 1
         end_perturbs = self.episode.goal_perturbs[:, goal_number, :][:, np.newaxis, :]
@@ -1345,23 +1348,26 @@ class DeepMindNavigationEnv(NavigationEnv):
         # Compute gt_dist to goal
         if self.task_params.outputs.gt_dist_to_goal:
             gt_dist_to_goal = np.zeros((len(current_node_ids), 1), dtype=np.float32)
+            """
+            Look into fixing this later
+            """
             for i, n in enumerate(current_node_ids):
-                gt_dist_to_goal[i, 0] = self.episode.dist_to_goal[goal_number][i][n]
+                gt_dist_to_goal[i, 0] = self.episode.dist_to_goal[i][n]
             outs['gt_dist_to_goal'] = np.expand_dims(gt_dist_to_goal, axis=1)
 
         # Free space in front of you, map and goal as images.
-        if self.task_params.outputs.ego_maps:
-            loc, x_axis, y_axis, theta = self.get_loc_axis(current_nodes,
-                                                           delta_theta=self.task.delta_theta,
-                                                           perturb=perturbs[:, step_number, :])
-            maps = generate_egocentric_maps(self.task.scaled_maps,
-                                            self.task_params.map_scales,
-                                            self.task_params.map_crop_sizes, loc,
-                                            x_axis, y_axis, theta)
-
-            for i in range(len(self.task_params.map_scales)):
-                outs['ego_maps_{:d}'.format(i)] = \
-                    np.expand_dims(np.expand_dims(maps[i], axis=1), axis=-1)
+        # if self.task_params.outputs.ego_maps:
+        #     loc, x_axis, y_axis, theta = self.get_loc_axis(current_nodes,
+        #                                                    delta_theta=self.task.delta_theta,
+        #                                                    perturb=perturbs[:, step_number, :])
+        #     maps = generate_egocentric_maps(self.task.scaled_maps,
+        #                                     self.task_params.map_scales,
+        #                                     self.task_params.map_crop_sizes, loc,
+        #                                     x_axis, y_axis, theta)
+        #
+        #     for i in range(len(self.task_params.map_scales)):
+        #         outs['ego_maps_{:d}'.format(i)] = \
+        #             np.expand_dims(np.expand_dims(maps[i], axis=1), axis=-1)
 
         if self.task_params.outputs.readout_maps:
             loc, x_axis, y_axis, theta = self.get_loc_axis(current_nodes,
@@ -1402,7 +1408,8 @@ class DeepMindNavigationEnv(NavigationEnv):
                                                                      self.task_params.map_crop_sizes[i],
                                                                      self.task_params.goal_channels))
                 for i in range(self.task_params.batch_size):
-                    t = target_class[i]
+                    # t = target_class[i]
+                    t = 0
                     for j in range(len(self.task_params.map_scales)):
                         outs['ego_goal_imgs_{:d}'.format(j)][i, :, :, :, t] = 1.
 
