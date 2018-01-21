@@ -1090,18 +1090,22 @@ class DeepMindNavigationEnv(NavigationEnv):
         return [is_inside(_x, _y) and not is_in_wall(_x, _y)
                 for _x, _y in zip(x, y)]
 
-    def render_nodes(self, nodes, perturb=None, aux_delta_theta=0.):
+    def render_nodes(self, nodes=None, perturb=None, aux_delta_theta=0.):
         """
         Hack to make network working
         """
-        return [self.obs] * self.task_params.batch_size
+        obs, _ = self.env.observations()
+        return [cv2.resize(obs, (225, 225))] * self.task_params.batch_size
 
     def reset(self, rngs):
         self.env.reset()
-        obs, _, _, info = self.env.step(0)
+        obs, info = self.env.observations()
 
         agent_pos = info.get("POSE")
-        ag_xyt = np.array([agent_pos[0] / 100, agent_pos[1] / 100, int(agent_pos[5] / np.pi)])
+        ag_xyt = (agent_pos[0] / 100, agent_pos[1] / 100, int(agent_pos[5] / np.pi))
+        _preprocess_for_task(ag_xyt)
+
+        ag_xyt = np.array(list(ag_xyt))
         goal_loc = np.array(list(info.get("GOAL.LOC")) + [0])
 
         rng_perturb = rngs[1];
@@ -1151,8 +1155,12 @@ class DeepMindNavigationEnv(NavigationEnv):
         2 -- Turn right
         """
         POSSIBLE_ACTIONS = {}
-        self.history.append(self.obs)
-        self.obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action])
+        self.history.append(render_nodes())
+        obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action])
+
+        assert obs is not None
+        cv2.imshow("c", obs)
+        cv2.waitKey(0)
 
         """
         Find exact agent position
@@ -1184,8 +1192,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         mode, size, num = building_name.split("-")
 
         deepmind_runfiles_path = os.path.dirname(inspect.getfile(dl))
-        deepmind_source_path = os.path.abspath(deepmind_runfiles_path + "/.." * 10 + '/deepmind-lab')
-        mapstrings_path = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer".format(deepmind_source_path,
+        mapstrings_path = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer".format(deepmind_runfiles_path,
                                                                                             size,
                                                                                             mode,
                                                                                             num)
@@ -1194,10 +1201,32 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         dl.set_runfiles_path(deepmind_runfiles_path)
 
-        self.env = mpdmlab.MultiProcDeepmindLab(
-            dlg.DeepmindLab
-            , "random_mazes"
-            , dict(width=225, height=225, fps=30
+        # self.env = mpdmlab.MultiProcDeepmindLab(
+        #     dlg.DeepmindLab
+        #     , "random_mazes"
+        #     , dict(width=225, height=225, fps=30
+        #            , rows=9
+        #            , cols=9
+        #            , mode=mode
+        #            , num_maps=1
+        #            , withvariations=True
+        #            , random_spawn_random_goal="True"
+        #            , entitydir=deepmind_runfiles_path
+        #            , chosen_map=building_name
+        #            , mapnames=building_name
+        #            # , mapnames = "seekavoid_arena_01"
+        #            , mapstrings=open(mapstrings_path).read()
+        #            , apple_prob=0.9
+        #            , episode_length_seconds=5)
+        #     # , dlg.L2NActionMapper_v0
+        #     , dlg.ActionMapperDiscrete
+        #     , additional_observation_types=[
+        #         "GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
+        #     , mpdmlab_workers=1
+        # )
+        self.env = dlg.DeepmindLab(
+            "random_mazes"
+            , dict(width=320, height=320, fps=30
                    , rows=9
                    , cols=9
                    , mode=mode
@@ -1207,7 +1236,6 @@ class DeepMindNavigationEnv(NavigationEnv):
                    , entitydir=deepmind_runfiles_path
                    , chosen_map=building_name
                    , mapnames=building_name
-                   # , mapnames = "seekavoid_arena_01"
                    , mapstrings=open(mapstrings_path).read()
                    , apple_prob=0.9
                    , episode_length_seconds=5)
@@ -1215,19 +1243,15 @@ class DeepMindNavigationEnv(NavigationEnv):
             , dlg.ActionMapperDiscrete
             , additional_observation_types=[
                 "GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
-            , mpdmlab_workers=1
         )
         print("Env loaded")
-        self.env.reset()
-        print("Env initialized")
-        self.obs, _, _, info = self.env.step(0)
+        self.obs, info = self.env.observations()
 
         self.building_name = building_name
 
         spawn = info["POSE"]
-        spawn = (spawn[0] / 100, spawn[1] / 100, 0)
-        self._preprocess_for_task(spawn)
-        print("Pre-process complete")
+        ag_xyt = (spawn[0] / 100, spawn[1] / 100, int(spawn[5] / np.pi))
+        self._preprocess_for_task(ag_xyt)
 
         # self.top_view = dlg.TopViewDeepmindLab(self.env)
         # self.top_view = TopView(assets_top_dir, "xyz")
