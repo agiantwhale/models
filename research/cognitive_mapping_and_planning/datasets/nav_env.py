@@ -36,6 +36,9 @@ import numpy as np
 import os
 import inspect
 import re
+if "DISPLAY_RENDER" in os.environ:
+    import matplotlib
+    matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 import graph_tool as gt
@@ -1102,8 +1105,8 @@ class DeepMindNavigationEnv(NavigationEnv):
         obs, info = self.env.observations()
 
         agent_pos = info.get("POSE")
-        ag_xyt = (agent_pos[0] / 100, agent_pos[1] / 100, int(agent_pos[5] / np.pi))
-        _preprocess_for_task(ag_xyt)
+        ag_xyt = (int(agent_pos[0] / 10)/10., int(agent_pos[1] / 10)/10., int(agent_pos[5] / np.pi))
+        self._preprocess_for_task(ag_xyt)
 
         ag_xyt = np.array(list(ag_xyt))
         goal_loc = np.array(list(info.get("GOAL.LOC")) + [0])
@@ -1143,36 +1146,43 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         return start_node_ids
 
-    def take_action(self, current_node_ids, action):
+    def take_action(self, current_node_ids, action, step_number):
         """Returns the new node after taking the action action. Stays at the current
         node if the action is invalid."""
 
-        print("Taking action {}".format(action))
+        print("Action: {}".format(action))
 
         """
         0 -- Go forward
         1 -- Turn left
         2 -- Turn right
         """
-        POSSIBLE_ACTIONS = {}
-        self.history.append(render_nodes())
-        obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action])
+        POSSIBLE_ACTIONS = {
+            0: 2,
+            1: 1,
+            2: 0,
+            3: 3
+        }
+
+        obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action[0]])
 
         assert obs is not None
-        cv2.imshow("c", obs)
-        cv2.waitKey(0)
+        if "DISPLAY_RENDER" in os.environ:
+            plt.ion()
+            plt.imshow(obs)
 
         """
         Find exact agent position
         """
         agent_pos = info.get("POSE")
-        ag_xyt = np.array([agent_pos[0] / 100, agent_pos[1] / 100, int(agent_pos[5] / np.pi)])
+        ag_xyt = np.array([int(agent_pos[0] / 10)/10., int(agent_pos[1] / 10)/10., int(agent_pos[5] / np.pi)])
         return [self.find_closest_node(ag_xyt)], [reward]
 
     def _preprocess_for_task(self, spawn):
         """Sets up the task field for doing navigation on the grid world."""
+        print("Preprocessing graph generation at {}".format(spawn))
         self.task = utils.Foo(n_ori=4, origin_loc=(0, 0, 0))
-        G = generate_graph(self.valid_fn_vec, 0.1, 4, spawn)
+        G = generate_graph(self.valid_fn_vec, 1, 4, spawn)
         gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
         self.task.gtG = gtG
         self.task.nodes = nodes
@@ -1249,8 +1259,8 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         self.building_name = building_name
 
-        spawn = info["POSE"]
-        ag_xyt = (spawn[0] / 100, spawn[1] / 100, int(spawn[5] / np.pi))
+        agent_pos = info["POSE"]
+        ag_xyt = (int(agent_pos[0] / 10)/10., int(agent_pos[1] / 10)/10., int(agent_pos[5] / np.pi))
         self._preprocess_for_task(ag_xyt)
 
         # self.top_view = dlg.TopViewDeepmindLab(self.env)
@@ -1310,7 +1320,7 @@ class DeepMindNavigationEnv(NavigationEnv):
             outs['imgs'] = imgs_all_with_history  # B x N x A x H x W x C
 
         if self.task_params.outputs.node_ids:
-            outs['node_ids'] = np.array(current_node_ids).reshape((-1, 1, 1))
+            outs['node_ids'] = np.array(current_node_ids * self.task_params.batch_size).reshape((-1, 1, 1))
             outs['perturbs'] = np.expand_dims(perturbs[:, step_number, :] * 1., axis=1)
 
         if self.task_params.outputs.analytical_counts:
