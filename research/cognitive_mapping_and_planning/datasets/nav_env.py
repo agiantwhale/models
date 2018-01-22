@@ -1104,7 +1104,8 @@ class DeepMindNavigationEnv(NavigationEnv):
         return [cv2.resize(obs, (225, 225))] * self.task_params.batch_size
 
     def reset(self, rngs):
-        obs, info = self.env.reset()
+        self.env.reset()
+        obs, info = self.env.observations()
 
         agent_pos = info.get("POSE")
         ag_xyt = self.agent_to_xyt(agent_pos)
