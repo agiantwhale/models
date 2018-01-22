@@ -396,6 +396,10 @@ def train_step_custom_online_sampling(sess, train_op, global_step,
         action, action_sample_wt = sample_action(
             rng_action, action_probs, optimal_action, sample_gt_prob,
             m.sample_action_type, m.sample_action_combine_type)
+
+        if "optimal" in train_step_kwargs:
+          action = np.argmax(optimal_action, 1)
+
         next_state, reward = e.take_action(states[j], action, j)
         executed_actions.append(action)
         states.append(next_state)
