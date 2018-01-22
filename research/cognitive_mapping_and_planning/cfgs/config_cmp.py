@@ -102,7 +102,10 @@ def process_arch_str(args, arch_str):
 
   arch_vars = get_arch_vars(arch_str)
 
-  args.navtask.task_params.outputs.ego_maps = True
+  """
+  HACKHACK
+  """
+  # args.navtask.task_params.outputs.ego_maps = True
   args.navtask.task_params.outputs.ego_goal_imgs = True
   args.navtask.task_params.outputs.egomotion = True
   args.navtask.task_params.toy_problem = False

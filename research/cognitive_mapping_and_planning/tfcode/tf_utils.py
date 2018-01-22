@@ -394,6 +394,11 @@ def train_step_custom_online_sampling(sess, train_op, global_step,
 
       if j < num_steps-1:
         print("running step: {}".format(j))
+        print("action probs: {}".format(action_probs))
+        print("optimal action: {}".format(optimal_action))
+        print("sample gt prob: {}".format(sample_gt_prob))
+        print("m.sample_action_type: {}".format(m.sample_action_type))
+        print("m.sample_action_combine_type: {}".format(m.sample_action_combine_type))
         # Sample from action_probs and optimal action.
         action, action_sample_wt = sample_action(
             rng_action, action_probs, optimal_action, sample_gt_prob,

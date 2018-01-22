@@ -1061,6 +1061,10 @@ class NavigationEnv(GridWorld, Building):
 
 
 class DeepMindNavigationEnv(NavigationEnv):
+    def agent_to_xyt(self, agent_pos):
+        r = int(((2 * agent_pos[4] / np.pi) % self.task_params.n_ori) + 0.5) % self.task_params.n_ori
+        return (int(agent_pos[0] / 10)/10., int(agent_pos[1] / 10)/10., r)
+
     def find_closest_node(self, pos):
         def xyt_dist(xyt, e):
             if xyt[2] != e[2]:
@@ -1070,6 +1074,7 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         min_node = min(self.task.nodes,
                        key=lambda n: xyt_dist(self.to_actual_xyt(n), pos))
+        print("Closest node loc: {}".format(min_node))
         return int(self.task.nodes_to_id[tuple(min_node)])
 
     def valid_fn_vec(self, pqr):
@@ -1081,6 +1086,8 @@ class DeepMindNavigationEnv(NavigationEnv):
             return x >= 0 and y >= 0 and int(x) <= w and int(y) <= h
 
         def is_in_wall(x, y):
+            if int(x) == x and int(y) == y:
+                return (int(x), int(y)) in wall_coords or (int(x) - 1, int(y) - 1) in wall_coords
             return (int(x), int(y)) in wall_coords
 
         xyt = self.to_actual_xyt_vec(np.array(pqr))
@@ -1098,12 +1105,11 @@ class DeepMindNavigationEnv(NavigationEnv):
         return [cv2.resize(obs, (225, 225))] * self.task_params.batch_size
 
     def reset(self, rngs):
-        self.env.reset()
-        obs, info = self.env.observations()
+        obs, info = self.env.reset()
 
         agent_pos = info.get("POSE")
-        ag_xyt = (agent_pos[0] / 100, agent_pos[1] / 100, int(agent_pos[5] / np.pi))
-        _preprocess_for_task(ag_xyt)
+        ag_xyt = self.agent_to_xyt(agent_pos)
+        self._preprocess_for_task(ag_xyt)
 
         ag_xyt = np.array(list(ag_xyt))
         goal_loc = np.array(list(info.get("GOAL.LOC")) + [0])
@@ -1143,34 +1149,50 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         return start_node_ids
 
-    def take_action(self, current_node_ids, action):
+    def take_action(self, current_node_ids, action, step_number):
         """Returns the new node after taking the action action. Stays at the current
         node if the action is invalid."""
 
-        print("Taking action {}".format(action))
+        print("Action: {}".format(action))
 
         """
-        0 -- Go forward
-        1 -- Turn left
-        2 -- Turn right
+        0 -- Go backwards
+        3 -- Go forward
+        2 -- Turn left
+        1 -- Turn right
         """
-        POSSIBLE_ACTIONS = {}
-        self.history.append(render_nodes())
-        obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action])
+        POSSIBLE_ACTIONS = {
+            0: 3,
+            1: 0,
+            2: 1,
+            3: 2
+        }
+
+        obs, reward, terminal, info = self.env.step(POSSIBLE_ACTIONS[action[0]])
+
+        print(obs.dtype)
 
         assert obs is not None
-        cv2.imshow("c", obs)
-        cv2.waitKey(0)
+        print(np.sum(obs))
+        if "DISPLAY_RENDER" in os.environ:
+            cv2.imshow("c", obs)
+            cv2.waitKey(0)
 
         """
         Find exact agent position
         """
         agent_pos = info.get("POSE")
-        ag_xyt = np.array([agent_pos[0] / 100, agent_pos[1] / 100, int(agent_pos[5] / np.pi)])
-        return [self.find_closest_node(ag_xyt)], [reward]
+        print("Agent position: {}".format(agent_pos))
+        ag_xyt = self.agent_to_xyt(agent_pos)
+        print("Scaled agent position: {}".format(ag_xyt))
+        ag_xyt = np.array(list(ag_xyt))
+        closest_nodes = [self.find_closest_node(ag_xyt)]
+        print("Current node: {}".format(closest_nodes))
+        return closest_nodes, [reward]
 
     def _preprocess_for_task(self, spawn):
         """Sets up the task field for doing navigation on the grid world."""
+        print("Preprocessing graph generation at {}".format(spawn))
         self.task = utils.Foo(n_ori=4, origin_loc=(0, 0, 0))
         G = generate_graph(self.valid_fn_vec, 0.1, 4, spawn)
         gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
@@ -1204,14 +1226,13 @@ class DeepMindNavigationEnv(NavigationEnv):
         # self.env = mpdmlab.MultiProcDeepmindLab(
         #     dlg.DeepmindLab
         #     , "random_mazes"
-        #     , dict(width=225, height=225, fps=30
+        #     , dict(width=320, height=320, fps=30
         #            , rows=9
         #            , cols=9
         #            , mode=mode
         #            , num_maps=1
         #            , withvariations=True
         #            , random_spawn_random_goal="True"
-        #            , entitydir=deepmind_runfiles_path
         #            , chosen_map=building_name
         #            , mapnames=building_name
         #            # , mapnames = "seekavoid_arena_01"
@@ -1245,12 +1266,12 @@ class DeepMindNavigationEnv(NavigationEnv):
                 "GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
         )
         print("Env loaded")
-        self.obs, info = self.env.observations()
-
         self.building_name = building_name
 
-        spawn = info["POSE"]
-        ag_xyt = (spawn[0] / 100, spawn[1] / 100, int(spawn[5] / np.pi))
+        obs, info = self.env.observations()
+
+        agent_pos = info.get("POSE")
+        ag_xyt = self.agent_to_xyt(agent_pos)
         self._preprocess_for_task(ag_xyt)
 
         # self.top_view = dlg.TopViewDeepmindLab(self.env)
@@ -1310,7 +1331,7 @@ class DeepMindNavigationEnv(NavigationEnv):
             outs['imgs'] = imgs_all_with_history  # B x N x A x H x W x C
 
         if self.task_params.outputs.node_ids:
-            outs['node_ids'] = np.array(current_node_ids).reshape((-1, 1, 1))
+            outs['node_ids'] = np.array(current_node_ids * self.task_params.batch_size).reshape((-1, 1, 1))
             outs['perturbs'] = np.expand_dims(perturbs[:, step_number, :] * 1., axis=1)
 
         if self.task_params.outputs.analytical_counts:

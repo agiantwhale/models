@@ -46,7 +46,7 @@ def adjust_args_for_mode(args, mode):
   elif mode == 'bench':
     # Actually testing the agent in settings that are kept same between
     # different runs.
-    args.navtask.task_params.batch_size = 16
+    args.navtask.task_params.batch_size = 1
     args.control.test = True
     args.arch.action_sample_type = 'argmax'
     args.arch.sample_gt_prob_type = 'zero'
@@ -176,7 +176,7 @@ def get_navtask_vars(navtask_str):
   # max steps
   if len(vals) == 4: ks.append('max_dist'); vals.append('32')
   # num steps
-  if len(vals) == 5: ks.append('num_steps'); vals.append('2')
+  if len(vals) == 5: ks.append('num_steps'); vals.append('40')
   # step size
   if len(vals) == 6: ks.append('step_size'); vals.append('8')
   # n_ori
