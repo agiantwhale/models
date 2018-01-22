@@ -1065,6 +1065,48 @@ class DeepMindNavigationEnv(NavigationEnv):
         r = int(((2 * agent_pos[4] / np.pi) % self.task_params.n_ori) + 0.5) % self.task_params.n_ori
         return (int(agent_pos[0] / 10)/10., int(agent_pos[1] / 10)/10., r)
 
+    def get_optimal_action(self, current_node_ids, step_number):
+        """Returns the optimal action from the current node."""
+        goal_number = 0
+        gtG = self.task.gtG
+        a = np.zeros((len(current_node_ids), self.task_params.num_actions), dtype=np.int32)
+        d_dict = self.episode.dist_to_goal[goal_number]
+        _, info = self.env.observations()
+        for i, c in enumerate(current_node_ids):
+            neigh = gtG.vertex(c).out_neighbours()
+            neigh_edge = gtG.vertex(c).out_edges()
+            ds = min(neigh, key=lambda x: d_dict[int(x)])
+
+            agent_pos = info["POSE"]
+            current_angle = agent_pos[4]
+
+            (x, y, _) = self.to_actual_xyt(self.task.nodes[int(ds)])
+            optimal_angle = np.arctan2(y - (agent_pos[1] / 100), x - (agent_pos[0] / 100))
+            
+            # Find difference between optimal angle and observation
+            angle_delta = optimal_angle - current_angle
+            if abs(angle_delta) < 0.0872665:
+                a[i, 3] = 1
+            else:
+                if abs(angle_delta) >= np.pi:
+                    if angle_delta > 0:
+                        a[i, 1] = 1
+                    else:
+                        a[i, 2] = 1
+                else:
+                    if angle_delta < 0:
+                        a[i, 1] = 1
+                    else:
+                        a[i, 2] = 1
+
+            # ds_min = np.min(ds)
+            # for i_, e in enumerate(neigh_edge):
+            #     if ds[i_] == ds_min:
+            #         _ = gtG.ep['action'][e]
+            #         a[i, _] = 1
+
+        return a
+
     def find_closest_node(self, pos):
         def xyt_dist(xyt, e):
             if xyt[2] != e[2]:
@@ -1185,7 +1227,7 @@ class DeepMindNavigationEnv(NavigationEnv):
     def _preprocess_for_task(self, spawn):
         """Sets up the task field for doing navigation on the grid world."""
         self.task = utils.Foo(n_ori=4, origin_loc=(0, 0, 0))
-        G = generate_graph(self.valid_fn_vec, 0.1, 4, spawn)
+        G = generate_graph(self.valid_fn_vec, 1, 4, spawn)
         gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
         self.task.gtG = gtG
         self.task.nodes = nodes
