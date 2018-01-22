@@ -258,81 +258,22 @@ def _test(args):
               break
 
 def _optimal(args):
-  args.solver.master = ''
-  container_name = ""
-  checkpoint_dir = os.path.join(format(args.logdir))
-  logging.error('Checkpoint_dir: %s', args.logdir)
+  rng_data_seed = 0
+  num_steps = 1200
+  rngs = [np.random.RandomState(rng_data_seed), np.random.RandomState(rng_data_seed)]
+  obj = nav_env.get_multiplexer_class(args.navtask, rng_data_seed)
+  e = obj.sample_env(rngs)
+  e.reset(rngs)
 
-  config = tf.ConfigProto();
-  config.device_count['GPU'] = 1;
+  for j in range(num_steps):
+    optimal_action = e.get_optimal_action([None], j)
 
-  m = utils.Foo()
-  m.tf_graph = tf.Graph()
-
-  rng_data_seed = 0; rng_action_seed = 0;
-  R = lambda: nav_env.get_multiplexer_class(args.navtask, rng_data_seed)
-  with m.tf_graph.as_default():
-    with tf.container(container_name):
-      m = args.setup_to_run(
-        m, args, is_training=False,
-        batch_norm_is_training=args.control.force_batchnorm_is_training_at_test,
-        summary_mode=args.control.test_mode)
-      train_step_kwargs = args.setup_train_step_kwargs(
-        m, R(), os.path.join(args.logdir, args.control.test_name),
-        rng_seed=rng_data_seed, is_chief=True,
-        num_steps=args.navtask.task_params.num_steps*args.navtask.task_params.num_goals,
-        iters=1, train_display_interval=None,
-        dagger_sample_bn_false=args.arch.dagger_sample_bn_false)
-
-      saver = slim.learning.tf_saver.Saver(variables.get_variables_to_restore())
-
-      sv = slim.learning.supervisor.Supervisor(
-          graph=ops.get_default_graph(), logdir=None, init_op=m.init_op,
-          summary_op=None, summary_writer=None, global_step=None, saver=m.saver_op)
-
-      last_checkpoint = None
-      reported = False
-      while True:
-        last_checkpoint_ = None
-        while last_checkpoint_ is None:
-          last_checkpoint_ = slim.evaluation.wait_for_new_checkpoint(
-            checkpoint_dir, last_checkpoint, seconds_to_sleep=10, timeout=60)
-        if last_checkpoint_ is None: break
-
-        last_checkpoint = last_checkpoint_
-        checkpoint_iter = int(os.path.basename(last_checkpoint).split('-')[1])
-
-        logging.info('Starting evaluation at %s using checkpoint %s.',
-                     time.strftime('%Y-%m-%d-%H:%M:%S', time.localtime()),
-                     last_checkpoint)
-
-        if (args.control.only_eval_when_done == False or 
-            checkpoint_iter >= args.solver.max_steps):
-          start = time.time()
-          logging.info('Starting evaluation at %s using checkpoint %s.', 
-                       time.strftime('%Y-%m-%d-%H:%M:%S', time.localtime()),
-                       last_checkpoint)
-
-          with sv.managed_session(args.solver.master, config=config,
-                                  start_standard_services=False) as sess:
-            sess.run(m.init_op)
-            sv.saver.restore(sess, last_checkpoint)
-            sv.start_queue_runners(sess)
-            if args.control.reset_rng_seed:
-              train_step_kwargs['rng_data'] = [np.random.RandomState(rng_data_seed),
-                                               np.random.RandomState(rng_data_seed)]
-              train_step_kwargs['rng_action'] = np.random.RandomState(rng_action_seed)
-            train_step_kwargs["optimal"] = True
-            vals, _ = tf_utils.train_step_custom_online_sampling(
-                sess, None, m.global_step_op, train_step_kwargs,
-                mode=args.control.test_mode)
-            should_stop = False
-
-            if checkpoint_iter >= args.solver.max_steps: 
-              should_stop = True
-
-            if should_stop:
-              break
+    if j < num_steps-1:
+      print(optimal_action)
+      action = np.argmax(optimal_action, 1)
+      print("Optimal actions: {}".format(optimal_action))
+      print("Chosen actions: {}".format(action))
+      e.take_action([None], action, j)
 
 if __name__ == '__main__':
   app.run()

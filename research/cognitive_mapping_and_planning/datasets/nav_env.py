@@ -1067,15 +1067,20 @@ class DeepMindNavigationEnv(NavigationEnv):
 
     def get_optimal_action(self, current_node_ids, step_number):
         """Returns the optimal action from the current node."""
-        goal_number = 0
+        _, info = self.env.observations()
+        agent_pos = info.get("POSE")
+        ag_xyt = self.agent_to_xyt(agent_pos)
+        ag_xyt = np.array(list(ag_xyt))
+        current_node_ids = [self.find_closest_node(ag_xyt)]
+
         gtG = self.task.gtG
         a = np.zeros((len(current_node_ids), self.task_params.num_actions), dtype=np.int32)
-        d_dict = self.episode.dist_to_goal[goal_number]
+        d_dict = self.episode.dist_to_goal[0]
         _, info = self.env.observations()
         for i, c in enumerate(current_node_ids):
             neigh = gtG.vertex(c).out_neighbours()
-            neigh_edge = gtG.vertex(c).out_edges()
             ds = min(neigh, key=lambda x: d_dict[int(x)])
+            print("Node {}, dist: {}".format(ds, d_dict[int(ds)]))
 
             agent_pos = info["POSE"]
             current_angle = agent_pos[4]
@@ -1089,7 +1094,7 @@ class DeepMindNavigationEnv(NavigationEnv):
                 print("Current angle: {}".format(current_angle))
 
             angle_delta = optimal_angle - current_angle
-            if abs(angle_delta) < 0.0872665:
+            if abs(angle_delta) < 0.1:
                 a[i, 3] = 1
             else:
                 if abs(angle_delta) >= np.pi:
@@ -1166,11 +1171,13 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         start_node_ids = [self.find_closest_node(ag_xyt)]
         goal_node_ids = [self.find_closest_node(goal_loc)]
+        goal_node_id = goal_node_ids[0]
         start_nodes = [tuple(nodes[_, :]) for _ in start_node_ids]
         goal_nodes = [[tuple(nodes[_, :])] for _ in goal_node_ids]
 
         dists = [get_distance_node_list(self.task.gtG, source_nodes=goal_node_ids,
                                         direction='to')]
+        # dists = [gt.topology.shortest_distance(self.task.gtG, ndi, goal_node_id) for ndi in self.task.gtG.vertices()]
 
         data_augment = tp.data_augment
         perturbs = _gen_perturbs(rng_perturb, tp.batch_size,
@@ -1218,7 +1225,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         if "DISPLAY_RENDER" in os.environ:
             print("Reward: {}".format(reward))
             cv2.imshow("c", obs)
-            cv2.waitKey(33)
+            cv2.waitKey(0)
 
         """
         Find exact agent position
