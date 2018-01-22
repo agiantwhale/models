@@ -36,9 +36,6 @@ import numpy as np
 import os
 import inspect
 import re
-if "DISPLAY_RENDER" in os.environ:
-    import matplotlib
-    matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 import graph_tool as gt
@@ -1176,7 +1173,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         assert obs is not None
         if "DISPLAY_RENDER" in os.environ:
             cv2.imshow("c", obs)
-            cv2.waitKey(0)
+            cv2.waitKey(33)
 
         """
         Find exact agent position
@@ -1194,7 +1191,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         """Sets up the task field for doing navigation on the grid world."""
         print("Preprocessing graph generation at {}".format(spawn))
         self.task = utils.Foo(n_ori=4, origin_loc=(0, 0, 0))
-        G = generate_graph(self.valid_fn_vec, 1, 4, spawn)
+        G = generate_graph(self.valid_fn_vec, 0.1, 4, spawn)
         gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
         self.task.gtG = gtG
         self.task.nodes = nodes
@@ -1632,5 +1629,4 @@ class BuildingMultiplexer():
         return self.buildings[self._building_id].pre(inputs)
 
     def __del__(self):
-        self.r_obj.clear_scene()
         logging.error('Clearing scene.')
