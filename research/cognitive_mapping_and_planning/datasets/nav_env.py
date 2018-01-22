@@ -1074,7 +1074,6 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         min_node = min(self.task.nodes,
                        key=lambda n: xyt_dist(self.to_actual_xyt(n), pos))
-        print("Closest node loc: {}".format(min_node))
         return int(self.task.nodes_to_id[tuple(min_node)])
 
     def valid_fn_vec(self, pqr):
@@ -1153,8 +1152,6 @@ class DeepMindNavigationEnv(NavigationEnv):
         """Returns the new node after taking the action action. Stays at the current
         node if the action is invalid."""
 
-        print("Action: {}".format(action))
-
         """
         0 -- Go backwards
         3 -- Go forward
@@ -1179,17 +1176,13 @@ class DeepMindNavigationEnv(NavigationEnv):
         Find exact agent position
         """
         agent_pos = info.get("POSE")
-        print("Agent position: {}".format(agent_pos))
         ag_xyt = self.agent_to_xyt(agent_pos)
-        print("Scaled agent position: {}".format(ag_xyt))
         ag_xyt = np.array(list(ag_xyt))
         closest_nodes = [self.find_closest_node(ag_xyt)]
-        print("Current node: {}".format(closest_nodes))
         return closest_nodes, [reward]
 
     def _preprocess_for_task(self, spawn):
         """Sets up the task field for doing navigation on the grid world."""
-        print("Preprocessing graph generation at {}".format(spawn))
         self.task = utils.Foo(n_ori=4, origin_loc=(0, 0, 0))
         G = generate_graph(self.valid_fn_vec, 0.1, 4, spawn)
         gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
@@ -1220,30 +1213,9 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         dl.set_runfiles_path(deepmind_runfiles_path)
 
-        # self.env = mpdmlab.MultiProcDeepmindLab(
-        #     dlg.DeepmindLab
-        #     , "random_mazes"
-        #     , dict(width=320, height=320, fps=30
-        #            , rows=9
-        #            , cols=9
-        #            , mode=mode
-        #            , num_maps=1
-        #            , withvariations=True
-        #            , random_spawn_random_goal="True"
-        #            , chosen_map=building_name
-        #            , mapnames=building_name
-        #            # , mapnames = "seekavoid_arena_01"
-        #            , mapstrings=open(mapstrings_path).read()
-        #            , apple_prob=0.9
-        #            , episode_length_seconds=5)
-        #     # , dlg.L2NActionMapper_v0
-        #     , dlg.ActionMapperDiscrete
-        #     , additional_observation_types=[
-        #         "GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
-        #     , mpdmlab_workers=1
-        # )
-        self.env = dlg.DeepmindLab(
-            "random_mazes"
+        self.env = mpdmlab.MultiProcDeepmindLab(
+            dlg.DeepmindLab
+            , "random_mazes"
             , dict(width=320, height=320, fps=30
                    , rows=9
                    , cols=9
@@ -1251,9 +1223,9 @@ class DeepMindNavigationEnv(NavigationEnv):
                    , num_maps=1
                    , withvariations=True
                    , random_spawn_random_goal="True"
-                   , entitydir=deepmind_runfiles_path
                    , chosen_map=building_name
                    , mapnames=building_name
+                   # , mapnames = "seekavoid_arena_01"
                    , mapstrings=open(mapstrings_path).read()
                    , apple_prob=0.9
                    , episode_length_seconds=5)
@@ -1261,6 +1233,7 @@ class DeepMindNavigationEnv(NavigationEnv):
             , dlg.ActionMapperDiscrete
             , additional_observation_types=[
                 "GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
+            , mpdmlab_workers=1
         )
         print("Env loaded")
         self.building_name = building_name
