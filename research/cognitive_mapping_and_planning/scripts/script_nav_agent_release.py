@@ -99,7 +99,11 @@ def _launcher(config_name, logdir, map_name):
   if args.control.train:
     _train(args)
 
-  if args.control.test:
+  if args.control.optimal:
+    print("Optimal mode")
+    _optimal(args)
+  elif args.control.test:
+    print("Test mode")
     _test(args)
 
 def get_args_for_config(config_name):
@@ -151,7 +155,7 @@ def _train(args):
         train_step_kwargs = args.setup_train_step_kwargs(
             m, R(), os.path.join(args.logdir, 'train'), rng_seed=args.solver.task,
             is_chief=args.solver.task==0,
-            num_steps=args.navtask.task_params.num_steps*args.navtask.task_params.num_goals, iters=10000,
+            num_steps=args.navtask.task_params.num_steps*args.navtask.task_params.num_goals, iters=1,
             train_display_interval=args.summary.display_interval,
             dagger_sample_bn_false=args.arch.dagger_sample_bn_false)
 
@@ -276,9 +280,8 @@ def _optimal(args):
         m, R(), os.path.join(args.logdir, args.control.test_name),
         rng_seed=rng_data_seed, is_chief=True,
         num_steps=args.navtask.task_params.num_steps*args.navtask.task_params.num_goals,
-        iters=args.summary.test_iters, train_display_interval=None,
+        iters=1, train_display_interval=None,
         dagger_sample_bn_false=args.arch.dagger_sample_bn_false)
-      train_step_kwargs["optimal"] = True
 
       saver = slim.learning.tf_saver.Saver(variables.get_variables_to_restore())
 
@@ -318,6 +321,7 @@ def _optimal(args):
               train_step_kwargs['rng_data'] = [np.random.RandomState(rng_data_seed),
                                                np.random.RandomState(rng_data_seed)]
               train_step_kwargs['rng_action'] = np.random.RandomState(rng_action_seed)
+            train_step_kwargs["optimal"] = True
             vals, _ = tf_utils.train_step_custom_online_sampling(
                 sess, None, m.global_step_op, train_step_kwargs,
                 mode=args.control.test_mode)

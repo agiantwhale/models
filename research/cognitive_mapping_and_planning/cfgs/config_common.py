@@ -47,6 +47,7 @@ def adjust_args_for_mode(args, mode):
     # Actually testing the agent in settings that are kept same between
     # different runs.
     args.navtask.task_params.batch_size = 1
+    args.control.optimal = mode == 'optimal'
     args.control.test = True
     args.arch.action_sample_type = 'argmax'
     args.arch.sample_gt_prob_type = 'zero'

@@ -1,0 +1,23 @@
+#PBS -N cogmap-deepmind-optimal
+#PBS -j oe                   # Join error and output files for convinience
+#PBS -l walltime=3:00:00     # Keep walltime big enough to finish the job
+#PBS -l nodes=1:ppn=1        # nodes requested: Processor per node: gpus requested
+#PBS -S /bin/bash            # Shell to use
+#PBS -m abe                  # Mail to <user>@umich.edu on abort, begin and end
+#PBS -M iljae@umich.edu      # Email id to alert
+#PBS -V                      # Pass current environment variables to the script
+
+export Z_HOME=/z/home/iljae
+export PATH=$Z_HOME/.local/bin/:/z/sw/bin/:/z/sw/sbin/:$PATH
+export CPATH=$Z_HOME/.local/include/:$CPATH
+export LIBRARY_PATH=$Z_HOME/.local/lib/:/z/sw/lib/:$LIBRARY_PATH
+export LD_LIBRARY_PATH=$Z_HOME/.local/lib/:/z/sw/lib/:/z/home/iljae/.local/cuda/lib64/:$LD_LIBRARY_PATH
+export MANPATH=$Z_HOME/share/man/:/z/sw/share/man/:$MANPATH
+
+module load cuda
+module load cudnn
+
+cd /z/home/iljae/models-cognitive-mapping/research/cognitive_mapping_and_planning
+source /z/home/iljae/venv/bin/activate
+
+sh scripts/script_optimal_deepmind.sh

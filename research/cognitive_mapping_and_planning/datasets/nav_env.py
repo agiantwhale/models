@@ -1084,6 +1084,10 @@ class DeepMindNavigationEnv(NavigationEnv):
             optimal_angle = np.arctan2(y - (agent_pos[1] / 100), x - (agent_pos[0] / 100))
             
             # Find difference between optimal angle and observation
+            if "DISPLAY_RENDER" in os.environ:
+                print("Optimal angle: {}".format(optimal_angle))
+                print("Current angle: {}".format(current_angle))
+
             angle_delta = optimal_angle - current_angle
             if abs(angle_delta) < 0.0872665:
                 a[i, 3] = 1
@@ -1127,7 +1131,7 @@ class DeepMindNavigationEnv(NavigationEnv):
             return x >= 0 and y >= 0 and int(x) <= w and int(y) <= h
 
         def is_in_wall(x, y):
-            if int(x) == x and int(y) == y:
+            if abs(int(x) - x) < 0.001 or abs(int(y) - y) < 0.001:
                 return (int(x), int(y)) in wall_coords or (int(x) - 1, int(y) - 1) in wall_coords
             return (int(x), int(y)) in wall_coords
 
@@ -1212,6 +1216,7 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         assert obs is not None
         if "DISPLAY_RENDER" in os.environ:
+            print("Reward: {}".format(reward))
             cv2.imshow("c", obs)
             cv2.waitKey(33)
 
@@ -1227,7 +1232,7 @@ class DeepMindNavigationEnv(NavigationEnv):
     def _preprocess_for_task(self, spawn):
         """Sets up the task field for doing navigation on the grid world."""
         self.task = utils.Foo(n_ori=4, origin_loc=(0, 0, 0))
-        G = generate_graph(self.valid_fn_vec, 1, 4, spawn)
+        G = generate_graph(self.valid_fn_vec, 0.5, 4, spawn)
         gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
         self.task.gtG = gtG
         self.task.nodes = nodes
