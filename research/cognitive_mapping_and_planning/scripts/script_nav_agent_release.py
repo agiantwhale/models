@@ -99,12 +99,13 @@ def _launcher(config_name, logdir, map_name):
   if args.control.train:
     _train(args)
 
-  if args.control.optimal:
-    print("Optimal mode")
-    _optimal(args)
-  elif args.control.test:
-    print("Test mode")
-    _test(args)
+  if args.control.test:
+    if args.control.optimal:
+      print("Optimal mode")
+      _optimal(args)
+    else:
+      print("Test mode")
+      _test(args)
 
 def get_args_for_config(config_name):
   configs = config_name.split('.')

@@ -411,7 +411,7 @@ def add_default_summaries(mode, arop_full_summary_iters, summarize_ops,
               input_tensors['common']['goal_loc']]]
     s_ops.arop_summary_iters += [-1, arop_full_summary_iters,
                                  arop_full_summary_iters]
-    s_ops.arop_eval_fns += [eval_ap, eval_dist, plot_trajectories]
+    s_ops.arop_eval_fns += [eval_ap, eval_dist]
   
   elif mode == 'test':
     arop = s_ops.additional_return_ops
@@ -428,8 +428,7 @@ def add_default_summaries(mode, arop_full_summary_iters, summarize_ops,
               input_tensors['common']['orig_maps'],
               input_tensors['common']['goal_loc']]]
     s_ops.arop_summary_iters += [-1, -1, -1, arop_full_summary_iters]
-    s_ops.arop_eval_fns += [eval_dist, save_d_at_t, save_all,
-                            plot_trajectories]
+    s_ops.arop_eval_fns += [eval_dist, save_d_at_t, save_all]
   return s_ops
 
 
