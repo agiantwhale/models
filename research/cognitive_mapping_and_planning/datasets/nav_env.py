@@ -1062,8 +1062,7 @@ class NavigationEnv(GridWorld, Building):
 
 class DeepMindNavigationEnv(NavigationEnv):
     def agent_to_xyt(self, agent_pos):
-        r = int(((2 * agent_pos[4] / np.pi) % self.task_params.n_ori) + 0.5) % self.task_params.n_ori
-        return (int(agent_pos[0] / 10)/10., int(agent_pos[1] / 10)/10., r)
+        return int(agent_pos[0] / 10) / 10., int(agent_pos[1] / 10) / 10.
 
     def get_optimal_action(self, current_node_ids, step_number):
         """Returns the optimal action from the current node."""
@@ -1075,26 +1074,30 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         gtG = self.task.gtG
         a = np.zeros((len(current_node_ids), self.task_params.num_actions), dtype=np.int32)
-        d_dict = self.episode.dist_to_goal[0]
-        _, info = self.env.observations()
+        d_dict = self.episode.dist_to_goal
         for i, c in enumerate(current_node_ids):
-            neigh = gtG.vertex(c).out_neighbours()
+            if c == self.goal_id:
+                a[i, 3] = 1
+                continue
+
+            neigh = list(gtG.vertex(c).out_neighbours())
             ds = min(neigh, key=lambda x: d_dict[int(x)])
-            print("Node {}, dist: {}".format(ds, d_dict[int(ds)]))
+            print("From node {}, dist: {}".format(self.task.nodes[int(c)], d_dict[int(c)]))
+            print("To node {}, dist: {}".format(self.task.nodes[int(ds)], d_dict[int(ds)]))
 
             agent_pos = info["POSE"]
             current_angle = agent_pos[4]
 
-            (x, y, _) = self.to_actual_xyt(self.task.nodes[int(ds)])
+            (x, y) = self.task.nodes[int(ds)]
             optimal_angle = np.arctan2(y - (agent_pos[1] / 100), x - (agent_pos[0] / 100))
-            
+
             # Find difference between optimal angle and observation
             if "DISPLAY_RENDER" in os.environ:
                 print("Optimal angle: {}".format(optimal_angle))
                 print("Current angle: {}".format(current_angle))
 
             angle_delta = optimal_angle - current_angle
-            if abs(angle_delta) < 0.1:
+            if abs(angle_delta) < 0.1 or abs(abs(angle_delta) - 2 * np.pi) < 0.1:
                 a[i, 3] = 1
             else:
                 if abs(angle_delta) >= np.pi:
@@ -1118,14 +1121,11 @@ class DeepMindNavigationEnv(NavigationEnv):
 
     def find_closest_node(self, pos):
         def xyt_dist(xyt, e):
-            if xyt[2] != e[2]:
-                return float('inf')
-            else:
-                return np.linalg.norm(xyt - e)
+            return np.linalg.norm(xyt - e)
 
-        min_node = min(self.task.nodes,
-                       key=lambda n: xyt_dist(self.to_actual_xyt(n), pos))
-        return int(self.task.nodes_to_id[tuple(min_node)])
+        min_node = min(enumerate(self.task.nodes),
+                       key=lambda n: xyt_dist(np.array(n[1]), np.array(pos)))
+        return min_node[0]
 
     def valid_fn_vec(self, pqr):
         """Returns if the given set of nodes is valid or not."""
@@ -1140,12 +1140,9 @@ class DeepMindNavigationEnv(NavigationEnv):
                 return (int(x), int(y)) in wall_coords or (int(x) - 1, int(y) - 1) in wall_coords
             return (int(x), int(y)) in wall_coords
 
-        xyt = self.to_actual_xyt_vec(np.array(pqr))
-        x = xyt[:, [0]]
-        y = xyt[:, [1]]
+        _x, _y = pqr
 
-        return [is_inside(_x, _y) and not is_in_wall(_x, _y)
-                for _x, _y in zip(x, y)]
+        return is_inside(_x, _y) and not is_in_wall(_x, _y)
 
     def render_nodes(self, nodes=None, perturb=None, aux_delta_theta=0.):
         """
@@ -1163,21 +1160,21 @@ class DeepMindNavigationEnv(NavigationEnv):
         self._preprocess_for_task(ag_xyt)
 
         ag_xyt = np.array(list(ag_xyt))
-        goal_loc = np.array(list(info.get("GOAL.LOC")) + [0])
+        g_x, g_y = info.get("GOAL.LOC")
+        goal_loc = (g_x - 0.5, self.entmap.height() - g_y + 0.5)
 
-        rng_perturb = rngs[1];
-        nodes = self.task.nodes
+        rng_perturb = rngs[1]
         tp = self.task_params
 
         start_node_ids = [self.find_closest_node(ag_xyt)]
         goal_node_ids = [self.find_closest_node(goal_loc)]
-        goal_node_id = goal_node_ids[0]
-        start_nodes = [tuple(nodes[_, :]) for _ in start_node_ids]
-        goal_nodes = [[tuple(nodes[_, :])] for _ in goal_node_ids]
+        start_nodes = start_node_ids
+        goal_nodes = goal_node_ids
 
-        dists = [get_distance_node_list(self.task.gtG, source_nodes=goal_node_ids,
-                                        direction='to')]
-        # dists = [gt.topology.shortest_distance(self.task.gtG, ndi, goal_node_id) for ndi in self.task.gtG.vertices()]
+        # dists = [get_distance_node_list(self.task.gtG, source_nodes=goal_node_ids,
+        #                                 direction='to')]
+        self.goal_id = goal_node_ids[0]
+        dists = [gt.topology.shortest_distance(self.task.gtG, ndi, goal_node_ids[0]) for ndi in self.task.gtG.vertices()]
 
         data_augment = tp.data_augment
         perturbs = _gen_perturbs(rng_perturb, tp.batch_size,
@@ -1225,7 +1222,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         if "DISPLAY_RENDER" in os.environ:
             print("Reward: {}".format(reward))
             cv2.imshow("c", obs)
-            cv2.waitKey(0)
+            cv2.waitKey(33)
 
         """
         Find exact agent position
@@ -1234,12 +1231,12 @@ class DeepMindNavigationEnv(NavigationEnv):
         ag_xyt = self.agent_to_xyt(agent_pos)
         ag_xyt = np.array(list(ag_xyt))
         closest_nodes = [self.find_closest_node(ag_xyt)]
-        return closest_nodes, [reward]
+        return closest_nodes, [reward], terminal
 
     def _preprocess_for_task(self, spawn):
         """Sets up the task field for doing navigation on the grid world."""
         self.task = utils.Foo(n_ori=4, origin_loc=(0, 0, 0))
-        G = generate_graph(self.valid_fn_vec, 0.5, 4, spawn)
+        G = generate_graph(self.valid_fn_vec, 1, spawn, (self.entmap.width(), self.entmap.height()))
         gtG, nodes, nodes_to_id = convert_to_graph_tool(G)
         self.task.gtG = gtG
         self.task.nodes = nodes

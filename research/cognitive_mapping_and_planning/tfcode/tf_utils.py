@@ -402,7 +402,7 @@ def train_step_custom_online_sampling(sess, train_op, global_step,
           print("Optimal actions: {}".format(optimal_action))
           print("Chosen actions: {}".format(action))
 
-        next_state, reward = e.take_action(states[j], action, j)
+        next_state, reward, terminal = e.take_action(states[j], action, j)
         executed_actions.append(action)
         states.append(next_state)
         rewards.append(reward)
