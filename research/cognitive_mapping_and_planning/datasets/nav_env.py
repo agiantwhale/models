@@ -38,6 +38,7 @@ import inspect
 import re
 import matplotlib.pyplot as plt
 
+import random
 import graph_tool as gt
 import graph_tool.topology
 
@@ -1062,6 +1063,16 @@ class NavigationEnv(GridWorld, Building):
 
 
 class DeepMindNavigationEnv(NavigationEnv):
+    def update_dists(self, raw_goal_loc):
+        g_y, g_x = raw_goal_loc
+        goal_loc = (g_x - 0.5, self.entmap.height() - g_y + 0.5)
+        if self.goal_loc != goal_loc:
+            self.goal_loc = goal_loc
+            self.goal_id = self.find_closest_node(goal_loc)
+            self.episode.dist_to_goal = [gt.topology.shortest_distance(self.task.gtG, ndi, self.goal_id)
+                                         for ndi in self.task.gtG.vertices()]
+        return self.episode.dist_to_goal
+
     def agent_to_xyt(self, agent_pos):
         return int(agent_pos[0] / 10) / 10., int(agent_pos[1] / 10) / 10.
 
@@ -1075,7 +1086,7 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         gtG = self.task.gtG
         a = np.zeros((len(current_node_ids), self.task_params.num_actions), dtype=np.int32)
-        d_dict = self.episode.dist_to_goal
+        d_dict = self.update_dists(info.get("GOAL.LOC"))
         for i, c in enumerate(current_node_ids):
             if c == self.goal_id:
                 a[i, 3] = 1
@@ -1083,8 +1094,6 @@ class DeepMindNavigationEnv(NavigationEnv):
 
             neigh = list(gtG.vertex(c).out_neighbours())
             ds = min(neigh, key=lambda x: d_dict[int(x)])
-            print("From node {}, dist: {}".format(self.task.nodes[int(c)], d_dict[int(c)]))
-            print("To node {}, dist: {}".format(self.task.nodes[int(ds)], d_dict[int(ds)]))
 
             agent_pos = info["POSE"]
             current_angle = agent_pos[4]
@@ -1094,6 +1103,8 @@ class DeepMindNavigationEnv(NavigationEnv):
 
             # Find difference between optimal angle and observation
             if "DISPLAY_RENDER" in os.environ:
+                print("From node {}, dist: {}".format(self.task.nodes[int(c)], d_dict[int(c)]))
+                print("To node {}, dist: {}".format(self.task.nodes[int(ds)], d_dict[int(ds)]))
                 print("Optimal angle: {}".format(optimal_angle))
                 print("Current angle: {}".format(current_angle))
 
@@ -1153,6 +1164,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         return [cv2.resize(obs, (225, 225))] * self.task_params.batch_size
 
     def reset(self, rngs):
+        # self.generate_new_environment()
         self.env.reset()
         obs, info = self.env.observations()
         self.entmap = EntityMap(self.entity_path_mapper(info.get("env_name")))
@@ -1162,7 +1174,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         self._preprocess_for_task(ag_xyt)
 
         ag_xyt = np.array(list(ag_xyt))
-        g_x, g_y = info.get("GOAL.LOC")
+        g_y, g_x = info.get("GOAL.LOC")
         goal_loc = (g_x - 0.5, self.entmap.height() - g_y + 0.5)
 
         rng_perturb = rngs[1]
@@ -1175,8 +1187,10 @@ class DeepMindNavigationEnv(NavigationEnv):
 
         # dists = [get_distance_node_list(self.task.gtG, source_nodes=goal_node_ids,
         #                                 direction='to')]
+        self.goal_loc = goal_loc
         self.goal_id = goal_node_ids[0]
-        dists = [gt.topology.shortest_distance(self.task.gtG, ndi, goal_node_ids[0]) for ndi in self.task.gtG.vertices()]
+        dists = [gt.topology.shortest_distance(self.task.gtG, ndi, goal_node_ids[0]) for ndi in
+                 self.task.gtG.vertices()]
 
         data_augment = tp.data_augment
         perturbs = _gen_perturbs(rng_perturb, tp.batch_size,
@@ -1224,7 +1238,7 @@ class DeepMindNavigationEnv(NavigationEnv):
         if "DISPLAY_RENDER" in os.environ:
             print("Reward: {}".format(reward))
             cv2.imshow("c", obs)
-            cv2.waitKey(0)
+            cv2.waitKey(33)
 
         """
         Find exact agent position
@@ -1253,6 +1267,7 @@ class DeepMindNavigationEnv(NavigationEnv):
     def __init__(self, robot, env, task_params, category_list=None,
                  building_name=None, flip=False, logdir=None,
                  building_loader=None, r_obj=None):
+        self.building_name = building_name
         self.task_params = task_params
 
         deepmind_runfiles_path = os.path.dirname(inspect.getfile(dl))
@@ -1261,69 +1276,75 @@ class DeepMindNavigationEnv(NavigationEnv):
             mode, size, num = env_name.split("-")
             entity_path_template = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer"
             return entity_path_template.format(deepmind_runfiles_path, size, mode, num)
+
+        # def __gen_new_env():
+        #     # next_building = random.choice(self.building_name.split(","))
+        #     self.env = dlg.DeepmindLab(
+        #         "random_mazes"
+        #         , dict(width=320, height=320, fps=30
+        #                , rows=9
+        #                , cols=9
+        #                , mode="training"
+        #                , num_maps=self.building_name.count(",")
+        #                , withvariations=True
+        #                , random_spawn_random_goal="True"
+        #                , chosen_map=self.building_name
+        #                , mapnames=self.building_name
+        #                # , mapnames = "seekavoid_arena_01"
+        #                , mapstrings=[open(__entity_path(b)).read()
+        #                              for b in self.building_name.split(",")]
+        #                , apple_prob=0.9
+        #                , episode_length_seconds=5)
+        #         # , dlg.L2NActionMapper_v0
+        #         , dlg.ActionMapperDiscrete
+        #         , additional_observation_types=["GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
+        #     )
+
         self.entity_path_mapper = __entity_path
+        # self.generate_new_environment = __gen_new_env
 
         dl.set_runfiles_path(deepmind_runfiles_path)
-
-        self.env = dlg.DeepmindLab(
-            "random_mazes"
-            , dict(width=320, height=320, fps=30
-                   , rows=9
-                   , cols=9
-                   , mode="training"
-                   , num_maps=1
-                   , withvariations=True
-                   , random_spawn_random_goal="True"
-                   , chosen_map=building_name
-                   , mapnames=building_name
-                   # , mapnames = "seekavoid_arena_01"
-                   , mapstrings=",".join(open(__entity_path(entity_layer)).read()
-                                         for entity_layer in building_name.split(","))
-                   , apple_prob=0.9
-                   , episode_length_seconds=5)
+        # __gen_new_env()
+        dm_properties = dict(width=320, height=320, fps=30
+                             , rows=9
+                             , cols=9
+                             , mode="training"
+                             , num_maps=1
+                             , withvariations=True
+                             , random_spawn_random_goal="True"
+                             , chosen_map=building_name
+                             , mapnames=building_name
+                             , mapstrings=",".join(open(__entity_path(entity_layer)).read()
+                                                   for entity_layer in building_name.split(","))
+                             , apple_prob=0.9
+                             , episode_length_seconds=5)
+        if "STATIC_GOAL" in os.environ:
+            dm_properties["goal_characters"] = "G"
+        if "STATIC_PLAYER" in os.environ:
+            dm_properties["spawn_characters"] = "P"
+        self.env = mpdmlab.MultiProcDeepmindLab(
+            dlg.DeepmindLab
+            , "random_mazes"
+            , dm_properties
             # , dlg.L2NActionMapper_v0
             , dlg.ActionMapperDiscrete
             , additional_observation_types=["GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
+            , mpdmlab_workers=1
         )
-        # self.env = mpdmlab.MultiProcDeepmindLab(
-        #     dlg.DeepmindLab
-        #     , "random_mazes"
-        #     , dict(width=320, height=320, fps=30
-        #            , rows=9
-        #            , cols=9
-        #            , mode="training"
-        #            , num_maps=1
-        #            , withvariations=True
-        #            , random_spawn_random_goal="True"
-        #            , chosen_map=building_name
-        #            , mapnames=building_name
-        #            # , mapnames = "seekavoid_arena_01"
-        #            , mapstrings=",".join(open(__entity_path(entity_layer)).read()
-        #                                  for entity_layer in building_name.split(","))
-        #            , apple_prob=0.9
-        #            , episode_length_seconds=5)
-        #     # , dlg.L2NActionMapper_v0
-        #     , dlg.ActionMapperDiscrete
-        #     , additional_observation_types=["GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
-        #     , mpdmlab_workers=1
-        # )
         obs, info = self.env.observations()
         entity_path = __entity_path(info.get("env_name"))
         self.entmap = EntityMap(entity_path)
 
         print("Env loaded")
 
-        self.building_name = building_name
-
         agent_pos = info.get("POSE")
         ag_xyt = self.agent_to_xyt(agent_pos)
         self._preprocess_for_task(ag_xyt)
 
-        g_x, g_y = info.get("GOAL.LOC")
+        g_y, g_x = info.get("GOAL.LOC")
         goal_loc = (g_x - 0.5, self.entmap.height() - g_y + 0.5)
-        print(goal_loc)
+        self.goal_loc = goal_loc
         self.goal_id = self.find_closest_node(goal_loc)
-        print(self.task.nodes[self.goal_id])
 
         # self.top_view = dlg.TopViewDeepmindLab(self.env)
         # self.top_view = TopView(assets_top_dir, "xyz")

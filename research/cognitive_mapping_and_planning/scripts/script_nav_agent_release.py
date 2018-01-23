@@ -270,17 +270,21 @@ def _optimal(args):
     rngs = [np.random.RandomState(rng_data_seed), np.random.RandomState(rng_data_seed)]
     obj = nav_env.get_multiplexer_class(args.navtask, rng_data_seed)
     e = obj.sample_env(rngs)
-    e.reset(rngs)
 
-    for j in range(num_steps):
-        optimal_action = e.get_optimal_action([None], j)
+    for _ in range(10):
+        e.reset(rngs)
 
-        if j < num_steps - 1:
-            print(optimal_action)
-            action = np.argmax(optimal_action, 1)
-            print("Optimal actions: {}".format(optimal_action))
-            print("Chosen actions: {}".format(action))
-            e.take_action([None], action, j)
+        for j in range(num_steps):
+            optimal_action = e.get_optimal_action([None], j)
+
+            if j < num_steps - 1:
+                print(optimal_action)
+                action = np.argmax(optimal_action, 1)
+                # print("Optimal actions: {}".format(optimal_action))
+                # print("Chosen actions: {}".format(action))
+                _, _, terminal = e.take_action([None], action, j)
+                if terminal:
+                    break
 
 
 if __name__ == '__main__':
