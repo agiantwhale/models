@@ -1155,6 +1155,7 @@ class DeepMindNavigationEnv(NavigationEnv):
     def reset(self, rngs):
         self.env.reset()
         obs, info = self.env.observations()
+        self.entmap = EntityMap(self.entity_path_mapper(info.get("env_name")))
 
         agent_pos = info.get("POSE")
         ag_xyt = self.agent_to_xyt(agent_pos)
@@ -1254,15 +1255,13 @@ class DeepMindNavigationEnv(NavigationEnv):
                  building_loader=None, r_obj=None):
         self.task_params = task_params
 
-        mode, size, num = building_name.split("-")
-
         deepmind_runfiles_path = os.path.dirname(inspect.getfile(dl))
-        mapstrings_path = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer".format(deepmind_runfiles_path,
-                                                                                            size,
-                                                                                            mode,
-                                                                                            num)
 
-        self.entmap = EntityMap(mapstrings_path)
+        def __entity_path(env_name):
+            mode, size, num = env_name.split("-")
+            entity_path_template = "{}/assets/entityLayers/{}/{}/entityLayers/{}.entityLayer"
+            return entity_path_template.format(deepmind_runfiles_path, size, mode, num)
+        self.entity_path_mapper = __entity_path
 
         dl.set_runfiles_path(deepmind_runfiles_path)
 
@@ -1272,14 +1271,15 @@ class DeepMindNavigationEnv(NavigationEnv):
             , dict(width=320, height=320, fps=30
                    , rows=9
                    , cols=9
-                   , mode=mode
+                   , mode="training"
                    , num_maps=1
                    , withvariations=True
                    , random_spawn_random_goal="True"
                    , chosen_map=building_name
                    , mapnames=building_name
                    # , mapnames = "seekavoid_arena_01"
-                   , mapstrings=open(mapstrings_path).read()
+                   , mapstrings=",".join(open(__entity_path(entity_layer)).read()
+                                         for entity_layer in building_name.split(","))
                    , apple_prob=0.9
                    , episode_length_seconds=5)
             # , dlg.L2NActionMapper_v0
@@ -1288,10 +1288,11 @@ class DeepMindNavigationEnv(NavigationEnv):
                 "GOAL.LOC", "SPAWN.LOC", "POSE", "GOAL.FOUND"]
             , mpdmlab_workers=1
         )
-        print("Env loaded")
-        self.building_name = building_name
-
         obs, info = self.env.observations()
+        self.entmap = EntityMap(__entity_path(info.get("env_name")))
+        print("Env loaded")
+
+        self.building_name = building_name
 
         agent_pos = info.get("POSE")
         ag_xyt = self.agent_to_xyt(agent_pos)
