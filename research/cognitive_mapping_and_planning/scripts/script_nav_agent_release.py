@@ -93,7 +93,10 @@ def main(_):
 
 def _launcher(config_name, logdir, map_name):
     args = _setup_args(config_name, logdir)
-    args.navtask.building_names = [map_name]
+
+    info = map_name.split("-")
+    mode, size, begin, end = info
+    args.navtask.building_names = [",".join("{}-{}-{:04d}".format(mode, size, i) for i in xrange(int(begin), int(end)+1))]
 
     fu.makedirs(args.logdir)
 
