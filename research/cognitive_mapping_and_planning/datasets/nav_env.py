@@ -267,9 +267,10 @@ class GridWorld():
 
     def to_actual_xyt_vec(self, pqr):
         """Converts from node array to location array on the map."""
+        print(pqr)
         p = pqr[:, 0][:, np.newaxis]
         q = pqr[:, 1][:, np.newaxis]
-        r = pqr[:, 2][:, np.newaxis]
+        r = np.zeros_like(p)
         if self.task.n_ori == 6:
             out = np.concatenate((p - q * 0.5 + self.task.origin_loc[0],
                                   q * np.sqrt(3.) / 2. + self.task.origin_loc[1],
@@ -1422,7 +1423,7 @@ class DeepMindNavigationEnv(NavigationEnv):
             Look into fixing this later
             """
             for i, n in enumerate(current_node_ids):
-                gt_dist_to_goal[i, 0] = self.episode.dist_to_goal[i][n]
+                gt_dist_to_goal[i, 0] = self.episode.dist_to_goal[n]
             outs['gt_dist_to_goal'] = np.expand_dims(gt_dist_to_goal, axis=1)
 
         # Free space in front of you, map and goal as images.
