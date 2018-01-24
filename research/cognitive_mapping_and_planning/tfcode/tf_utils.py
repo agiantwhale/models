@@ -380,7 +380,8 @@ def train_step_custom_online_sampling(sess, train_op, global_step,
         net_state = sess.run(m.train_ops['init_state'], feed_dict=feed_dict)
         net_state = dict(zip(m.train_ops['state_names'], net_state))
         net_state_to_input.append(net_state)
-        for j in range(num_steps):
+        while not terminal:
+            j = 0
             f = e.get_features(states[j], j)
             f = e.pre_features(f)
             f.update(net_state)
